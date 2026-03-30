@@ -1,0 +1,10 @@
+{
+  "name": "invoice-generator",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "build": "cd frontend && npm install && npm run build",
+    "start": "cd backend && node server.js",
+    "install:all": "cd frontend && npm install && cd ../backend && npm install"
+  }
+}
