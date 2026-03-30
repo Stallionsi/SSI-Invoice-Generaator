@@ -27,17 +27,27 @@ const { auditLogger }  = require('./middlewares/auditLog.middleware');
 const app = express();
 
 // ─── Security Headers ──────────────────────────────────────────────────────
-app.use(helmet());
+app.use(helmet({
+  contentSecurityPolicy: false, // allow React app assets to load
+}));
 
 // ─── CORS ──────────────────────────────────────────────────────────────────
-app.use(
-  cors({
-    origin: CLIENT_URL,
-    credentials: true,
-    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'X-Company-Id'],
-  })
-);
+// In production the frontend is served from the same origin — no CORS needed.
+// In development allow localhost:3000 (Vite dev server).
+if (NODE_ENV !== 'production') {
+  const allowedOrigins = CLIENT_URL.split(',').map((o) => o.trim()).filter(Boolean);
+  app.use(
+    cors({
+      origin: (origin, cb) => {
+        if (!origin || allowedOrigins.includes(origin)) return cb(null, true);
+        cb(new Error(`CORS: origin ${origin} not allowed`));
+      },
+      credentials: true,
+      methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+      allowedHeaders: ['Content-Type', 'Authorization', 'X-Company-Id'],
+    })
+  );
+}
 
 // ─── Compression ───────────────────────────────────────────────────────────
 app.use(compression());
@@ -69,9 +79,8 @@ const globalLimiter = rateLimit({
 });
 app.use('/api/', globalLimiter);
 
-// Auth endpoints get a stricter limiter
 const authLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 min
+  windowMs: 15 * 60 * 1000,
   max: 10,
   message: { success: false, message: 'Too many authentication attempts. Try again in 15 minutes.' },
 });
@@ -98,10 +107,22 @@ app.use('/api/reports',       reportRoutes);
 app.use('/api/custom-fields', customFieldRoutes);
 app.use('/api/utils',         utilsRoutes);
 
-// ─── 404 Handler ──────────────────────────────────────────────────────────
-app.use((req, res) => {
-  res.status(404).json({ success: false, message: `Route ${req.originalUrl} not found` });
-});
+// ─── Serve React Frontend (production) ────────────────────────────────────
+if (NODE_ENV === 'production') {
+  const frontendDist = path.resolve(__dirname, '../../frontend/dist');
+  app.use(express.static(frontendDist));
+  // Catch-all: let React Router handle all non-API routes
+  app.get('*', (_req, res) => {
+    res.sendFile(path.join(frontendDist, 'index.html'));
+  });
+}
+
+// ─── 404 Handler (dev only — production uses React catch-all) ─────────────
+if (NODE_ENV !== 'production') {
+  app.use((req, res) => {
+    res.status(404).json({ success: false, message: `Route ${req.originalUrl} not found` });
+  });
+}
 
 // ─── Global Error Handler ─────────────────────────────────────────────────
 app.use(errorHandler);
