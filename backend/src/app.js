@@ -109,7 +109,7 @@ app.use('/api/utils',         utilsRoutes);
 
 // ─── Serve React Frontend (production) ────────────────────────────────────
 if (NODE_ENV === 'production') {
-  const frontendDist = path.resolve(__dirname, '../../frontend/dist');
+  const frontendDist = path.resolve(__dirname, '../public');
   app.use(express.static(frontendDist));
   // Catch-all: let React Router handle all non-API routes
   app.get('*', (_req, res) => {
