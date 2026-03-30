@@ -1,0 +1,79 @@
+const invoiceService = require('../services/invoice.service');
+const { generateInvoicePdf } = require('../services/pdf.service');
+const { previewNextInvoiceNumber, previewNextForClient } = require('../utils/invoiceNumber.util');
+const { success, created, paginated } = require('../utils/apiResponse');
+const { asyncHandler } = require('../middlewares/error.middleware');
+
+const create = asyncHandler(async (req, res) => {
+  const invoice = await invoiceService.create(req.body, req.companyId, req.user._id);
+  created(res, { invoice }, 'Invoice created');
+});
+
+const list = asyncHandler(async (req, res) => {
+  const { invoices, pagination } = await invoiceService.list(req.companyId, req.query);
+  paginated(res, { invoices }, pagination);
+});
+
+const getOne = asyncHandler(async (req, res) => {
+  const invoice = await invoiceService.getById(req.params.id, req.companyId);
+  success(res, { invoice });
+});
+
+const update = asyncHandler(async (req, res) => {
+  const invoice = await invoiceService.update(req.params.id, req.companyId, req.body);
+  success(res, { invoice }, 'Invoice updated');
+});
+
+const cancel = asyncHandler(async (req, res) => {
+  const invoice = await invoiceService.cancel(req.params.id, req.companyId);
+  success(res, {}, 'Invoice deleted');
+});
+
+const send = asyncHandler(async (req, res) => {
+  console.log('Send API hit', { invoiceId: req.params.id, userId: req.user._id });
+  await invoiceService.sendInvoiceEmail(req.params.id, req.companyId, req.body, req.user._id);
+  success(res, {}, 'Invoice sent successfully');
+});
+
+const duplicate = asyncHandler(async (req, res) => {
+  const invoice = await invoiceService.duplicate(req.params.id, req.companyId, req.user._id);
+  created(res, { invoice }, 'Invoice duplicated');
+});
+
+const createCreditNote = asyncHandler(async (req, res) => {
+  const creditNote = await invoiceService.createCreditNote(req.params.id, req.companyId, req.user._id);
+  created(res, { creditNote }, 'Credit note created');
+});
+
+// Public endpoint — client views invoice via unique link
+const viewPublic = asyncHandler(async (req, res) => {
+  const invoice = await invoiceService.markViewed(req.params.token);
+  if (!invoice) return res.status(404).json({ success: false, message: 'Invoice not found' });
+  success(res, { invoice });
+});
+const Invoice = require('../models/Invoice.model');
+const fs      = require('fs');
+const path    = require('path');
+
+const getPdf = asyncHandler(async (req, res) => {
+  const invoice = await Invoice.findOne({ _id: req.params.id, company: req.companyId });
+  if (!invoice) return res.status(404).json({ success: false, message: 'Invoice not found' });
+
+  // Always regenerate — ensures template changes are reflected immediately
+  // and old cached files (including ImageKit URLs) are never served stale.
+  const pdfPath = await generateInvoicePdf(invoice._id);
+
+  const fullPath = path.resolve(pdfPath);
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Disposition', `inline; filename="invoice-${invoice.invoiceNumber}.pdf"`);
+  res.sendFile(fullPath);
+});
+const getNextNumber = asyncHandler(async (req, res) => {
+  const { clientId } = req.query;
+  const nextNumber = clientId
+    ? await previewNextForClient(req.companyId, clientId)
+    : await previewNextInvoiceNumber(req.companyId);
+  success(res, { nextNumber });
+});
+
+module.exports = { create, list, getOne, update, cancel, send, duplicate, createCreditNote, viewPublic, getPdf, getNextNumber };
