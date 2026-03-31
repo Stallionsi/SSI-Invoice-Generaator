@@ -5,7 +5,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { useMutation } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
-import { Receipt } from 'lucide-react';
+import { Zap } from 'lucide-react';
 import { login } from '../api/auth.api';
 import { useAuthStore } from '../store/authStore';
 import Spinner from '../components/ui/Spinner';
@@ -40,18 +40,20 @@ export default function Login() {
   });
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50 px-4">
+    <div className="min-h-screen flex items-center justify-center px-4"
+         style={{ background: 'linear-gradient(135deg, #071525 0%, #0B1E35 40%, #102848 100%)' }}>
       <div className="w-full max-w-sm">
         {/* Logo */}
         <div className="flex flex-col items-center mb-8">
-          <div className="bg-primary-600 text-white rounded-2xl p-3 mb-3">
-            <Receipt className="w-8 h-8" />
+          <div className="relative flex items-center justify-center w-14 h-14 rounded-2xl mb-4"
+               style={{ background: 'linear-gradient(135deg, #F97316, #E05A00)', boxShadow: '0 4px 20px rgba(249,115,22,0.45)' }}>
+            <Zap className="w-7 h-7 text-white" fill="white" />
           </div>
-          <h1 className="text-2xl font-bold text-gray-900">InvoiceApp</h1>
-          <p className="text-sm text-gray-500 mt-1">Sign in to your account</p>
+          <h1 className="text-2xl font-bold text-white tracking-tight">InvoiceApp</h1>
+          <p className="text-sm mt-1" style={{ color: '#4A80C4' }}>Sign in to your account</p>
         </div>
 
-        <div className="card">
+        <div className="rounded-xl p-6" style={{ background: '#FFFFFF', boxShadow: '0 20px 60px rgba(7,21,37,0.35)' }}>
           <form onSubmit={handleSubmit((d) => { setApiError(''); mutate(d); })} className="space-y-4">
             <div>
               <label className="label">Email</label>
@@ -99,9 +101,9 @@ export default function Login() {
           </form>
         </div>
 
-        <p className="text-center text-sm text-gray-500 mt-4">
+        <p className="text-center text-sm mt-5" style={{ color: '#4A80C4' }}>
           Don't have an account?{' '}
-          <Link to="/register" className="text-primary-600 font-medium hover:underline">
+          <Link to="/register" className="font-semibold hover:underline" style={{ color: '#6BA3FF' }}>
             Sign up
           </Link>
         </p>

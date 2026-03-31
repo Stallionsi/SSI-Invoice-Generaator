@@ -79,7 +79,8 @@ function computeStatsByCurrency(invoices) {
 }
 
 function buildChartData(invoices, period, currency) {
-  // Only PAID invoices of the chosen currency contribute to the revenue chart
+  // Only PAID invoices of the chosen currency contribute to the revenue chart.
+  // Invoices are already filtered to the selected period — we just group them.
   const paid = invoices.filter(
     (inv) => status(inv) === 'paid' && (inv.currency || 'INR') === currency,
   );
@@ -92,18 +93,16 @@ function buildChartData(invoices, period, currency) {
 
     let key, sortKey;
     if (period === 'monthly') {
-      const m    = date.getMonth();          // 0-based
-      const yr   = date.getFullYear();
-      key        = `${MONTH_NAMES[m]} '${String(yr).slice(2)}`;
-      sortKey    = `${yr}${String(m + 1).padStart(2, '0')}`;
-    } else if (period === 'quarterly') {
-      const q    = Math.ceil((date.getMonth() + 1) / 3);
-      const yr   = date.getFullYear();
-      key        = `Q${q} ${yr}`;
-      sortKey    = `${yr}${q}`;
+      // Drill-down: group by week within the selected month
+      const day = date.getDate();
+      const wk  = day <= 7 ? 1 : day <= 14 ? 2 : day <= 21 ? 3 : 4;
+      key     = `Week ${wk}`;
+      sortKey = String(wk);
     } else {
-      // yearly
-      key = sortKey = String(date.getFullYear());
+      // Quarterly & yearly: group by month
+      const m = date.getMonth();
+      key     = MONTH_NAMES[m];
+      sortKey = String(m).padStart(2, '0');
     }
 
     if (!map[sortKey]) map[sortKey] = { label: key, revenue: 0, sortKey };
@@ -261,9 +260,19 @@ function RevenueTooltip({ active, payload, label, currency = 'INR' }) {
 export default function Reports() {
   const location = useLocation();
   const navigate = useNavigate();
-  const [period, setPeriod] = useState('monthly');
-  const [selectedClient, setSelectedClient] = useState('all');
-  const [chartCurrency, setChartCurrency] = useState('INR');
+
+  const _now            = new Date();
+  const _currentYear    = _now.getFullYear();
+  const _currentMonth   = _now.getMonth();           // 0-based
+  const _currentQuarter = Math.ceil((_now.getMonth() + 1) / 3);
+  const yearOptions     = Array.from({ length: 5 }, (_, i) => _currentYear - i);
+
+  const [period, setPeriod]               = useState('monthly');
+  const [selectedYear, setSelectedYear]   = useState(_currentYear);
+  const [selectedMonth, setSelectedMonth] = useState(_currentMonth);
+  const [selectedQuarter, setSelectedQuarter] = useState(_currentQuarter);
+  const [selectedClient, setSelectedClient]   = useState('all');
+  const [chartCurrency, setChartCurrency]     = useState('INR');
 
   // Seed client filter from navigation state (e.g. clicking a client on the Clients page)
   useEffect(() => {
@@ -299,7 +308,6 @@ export default function Reports() {
   const clientList     = clientsRes?.data?.data?.clients      || [];
 
   // ── Client filter ─────────────────────────────────────────────────────────
-  // invoice.client is a populated object with ._id; match by string comparison
   const filteredInvoices = useMemo(() => {
     if (selectedClient === 'all') return invoices;
     return invoices.filter((inv) => {
@@ -307,6 +315,27 @@ export default function Reports() {
       return String(id) === selectedClient;
     });
   }, [invoices, selectedClient]);
+
+  // ── Period filter — applied on top of client filter ────────────────────────
+  const periodFilteredInvoices = useMemo(() => {
+    let from, to;
+    if (period === 'monthly') {
+      from = new Date(selectedYear, selectedMonth, 1);
+      to   = new Date(selectedYear, selectedMonth + 1, 0, 23, 59, 59, 999);
+    } else if (period === 'quarterly') {
+      const startMonth = (selectedQuarter - 1) * 3;
+      from = new Date(selectedYear, startMonth, 1);
+      to   = new Date(selectedYear, startMonth + 3, 0, 23, 59, 59, 999);
+    } else {
+      from = new Date(selectedYear, 0, 1);
+      to   = new Date(selectedYear, 11, 31, 23, 59, 59, 999);
+    }
+    return filteredInvoices.filter((inv) => {
+      const date = parseDate(inv.invoiceDate);
+      if (!date) return false;
+      return date >= from && date <= to;
+    });
+  }, [filteredInvoices, period, selectedYear, selectedMonth, selectedQuarter]);
 
   // ── Currency detection ────────────────────────────────────────────────────
   // Derive the set of currencies present in the filtered invoices.
@@ -326,32 +355,26 @@ export default function Reports() {
     if (activeCurrency) setChartCurrency(activeCurrency);
   }, [activeCurrency]);
 
-  // ── Stats ─────────────────────────────────────────────────────────────────
-  // Single-currency stats (used when a client is selected or all invoices share one currency).
+  // ── Stats — all based on period-filtered invoices ─────────────────────────
   const { totalRevenue, totalCollected, outstanding } = useMemo(
-    () => computeStats(filteredInvoices),
-    [filteredInvoices],
+    () => computeStats(periodFilteredInvoices),
+    [periodFilteredInvoices],
   );
 
-  // Per-currency stats (used in "All Clients" mixed-currency view).
   const statsByCurrency = useMemo(
-    () => computeStatsByCurrency(filteredInvoices),
-    [filteredInvoices],
+    () => computeStatsByCurrency(periodFilteredInvoices),
+    [periodFilteredInvoices],
   );
 
-  // For "Total Invoices": use pagination.total when showing all, filtered count otherwise
-  const totalCount = selectedClient === 'all'
-    ? (invRes?.data?.pagination?.total ?? invoices.length)
-    : filteredInvoices.length;
+  const totalCount = periodFilteredInvoices.length;
 
-  // Chart — paid invoices of the active chartCurrency grouped by selected period
+  // Chart — period-filtered paid invoices grouped for drill-down
   const chartData = useMemo(
-    () => buildChartData(filteredInvoices, period, chartCurrency),
-    [filteredInvoices, period, chartCurrency],
+    () => buildChartData(periodFilteredInvoices, period, chartCurrency),
+    [periodFilteredInvoices, period, chartCurrency],
   );
 
-  // Aging pie — unpaid invoices bucketed by days past due
-  // When mixed currency, only bucket invoices of chartCurrency to keep amounts meaningful.
+  // Aging pie — all outstanding for the client (not period-filtered — aging is current state)
   const agingPie = useMemo(
     () => buildAgingBuckets(
       isMixedCurrency
@@ -361,11 +384,18 @@ export default function Reports() {
     [filteredInvoices, isMixedCurrency, chartCurrency],
   );
 
-  // ── Excel export — honours active filter ─────────────────────────────────
+  // ── Period label for UI ───────────────────────────────────────────────────
+  const periodLabel = period === 'monthly'
+    ? `${MONTH_NAMES[selectedMonth]} ${selectedYear}`
+    : period === 'quarterly'
+    ? `Q${selectedQuarter} ${selectedYear}`
+    : String(selectedYear);
+
+  // ── Excel export — honours period filter ─────────────────────────────────
   const handleExport = () => {
-    if (!filteredInvoices.length) { toast.error('No invoices to export'); return; }
+    if (!periodFilteredInvoices.length) { toast.error('No invoices to export'); return; }
     try {
-      downloadInvoicesXlsx(filteredInvoices);
+      downloadInvoicesXlsx(periodFilteredInvoices);
       toast.success('Excel file downloaded');
     } catch {
       toast.error('Export failed');
@@ -486,7 +516,7 @@ export default function Reports() {
                 }`}
               >
                 {statsByCurrency.map((s) => {
-                  const invCount = filteredInvoices.filter(
+                  const invCount = periodFilteredInvoices.filter(
                     (inv) => (inv.currency || 'INR') === s.currency,
                   ).length;
                   return (
@@ -554,7 +584,7 @@ export default function Reports() {
                 <StatCard icon={DollarSign} label="Total Collected"  value={fmtCurrency(s.totalCollected, s.currency)} color="green" />
                 <StatCard icon={Clock}      label="Outstanding"      value={fmtCurrency(s.outstanding,    s.currency)} color="amber" />
                 <StatCard icon={FileText}   label="Total Invoices"
-                  value={filteredInvoices.filter((inv) => (inv.currency || 'INR') === s.currency).length}
+                  value={periodFilteredInvoices.filter((inv) => (inv.currency || 'INR') === s.currency).length}
                   color="blue"
                 />
               </div>
@@ -610,8 +640,9 @@ export default function Reports() {
         </div>
       ) : (
         <>
-      {/* ── Period selector + currency picker ───────────────────────────── */}
+      {/* ── Period selector + date pickers ──────────────────────────────── */}
       <div className="flex flex-wrap items-center gap-2 mb-6">
+        {/* Period type buttons */}
         {['monthly', 'quarterly', 'yearly'].map((p) => (
           <button
             key={p}
@@ -621,6 +652,46 @@ export default function Reports() {
             {p}
           </button>
         ))}
+
+        <div className="w-px h-5 bg-slate-200 mx-1" />
+
+        {/* Month picker — only for monthly */}
+        {period === 'monthly' && (
+          <select
+            value={selectedMonth}
+            onChange={(e) => setSelectedMonth(+e.target.value)}
+            className="input text-sm w-auto"
+          >
+            {MONTH_NAMES.map((m, i) => (
+              <option key={i} value={i}>{m}</option>
+            ))}
+          </select>
+        )}
+
+        {/* Quarter picker — only for quarterly */}
+        {period === 'quarterly' && (
+          <select
+            value={selectedQuarter}
+            onChange={(e) => setSelectedQuarter(+e.target.value)}
+            className="input text-sm w-auto"
+          >
+            {[1, 2, 3, 4].map((q) => (
+              <option key={q} value={q}>Q{q}</option>
+            ))}
+          </select>
+        )}
+
+        {/* Year picker — always visible */}
+        <select
+          value={selectedYear}
+          onChange={(e) => setSelectedYear(+e.target.value)}
+          className="input text-sm w-auto"
+        >
+          {yearOptions.map((y) => (
+            <option key={y} value={y}>{y}</option>
+          ))}
+        </select>
+
         {isMixedCurrency && (
           <select
             value={chartCurrency}
@@ -639,8 +710,8 @@ export default function Reports() {
 
         {/* ── Revenue bar chart ───────────────────────────────────────────── */}
         <div className="card">
-          <h2 className="text-sm font-semibold text-gray-700 mb-4 capitalize">
-            Revenue — {period}{' '}
+          <h2 className="text-sm font-semibold text-gray-700 mb-4">
+            Revenue — {periodLabel}{' '}
             <span className="text-gray-400 font-normal">(paid invoices · {chartCurrency})</span>
           </h2>
           {isLoading ? (
@@ -784,10 +855,16 @@ export default function Reports() {
         <div className="card p-0 overflow-hidden mt-6">
           <div className="px-4 py-3 border-b border-slate-100 flex items-center justify-between">
             <h2 className="text-sm font-semibold text-gray-700">
-              Invoices — {selectedClientName}
-              <span className="text-gray-400 font-normal ml-1.5">({filteredInvoices.length})</span>
+              Invoices — {selectedClientName} · {periodLabel}
+              <span className="text-gray-400 font-normal ml-1.5">({periodFilteredInvoices.length})</span>
             </h2>
           </div>
+          {periodFilteredInvoices.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-10 text-center">
+              <FileText className="w-10 h-10 text-slate-200 mb-3" />
+              <p className="text-sm text-slate-400">No invoices in {periodLabel}</p>
+            </div>
+          ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm min-w-[640px]">
               <thead className="bg-slate-50 border-b border-slate-100">
@@ -803,7 +880,7 @@ export default function Reports() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-50">
-                {filteredInvoices.map((inv) => {
+                {periodFilteredInvoices.map((inv) => {
                   const cur        = inv.currency || 'INR';
                   const grandTotal = n(inv.grandTotal);
                   const amtPaid    = n(inv.amountPaid);
@@ -838,6 +915,7 @@ export default function Reports() {
               </tbody>
             </table>
           </div>
+          )}
         </div>
       )}
         </>

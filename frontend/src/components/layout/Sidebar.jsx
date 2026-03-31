@@ -5,7 +5,7 @@ import {
   FileText,
   BarChart2,
   Settings,
-  Receipt,
+  Zap,
   X,
 } from 'lucide-react';
 import clsx from 'clsx';
@@ -24,7 +24,8 @@ export default function Sidebar({ open, onClose }) {
       {/* Mobile backdrop */}
       {open && (
         <div
-          className="fixed inset-0 z-30 bg-slate-900/30 backdrop-blur-sm lg:hidden"
+          className="fixed inset-0 z-30 lg:hidden"
+          style={{ background: 'rgba(7,21,37,0.55)', backdropFilter: 'blur(3px)' }}
           onClick={onClose}
           aria-hidden="true"
         />
@@ -32,32 +33,45 @@ export default function Sidebar({ open, onClose }) {
 
       <aside
         className={clsx(
-          'fixed lg:static inset-y-0 left-0 z-40 w-64',
-          /* White sidebar stands out against the #F1F5F9 gray content area */
-          'bg-white border-r border-slate-200 flex flex-col shrink-0',
+          'fixed lg:static inset-y-0 left-0 z-40 flex flex-col shrink-0',
           'transition-transform duration-200 ease-in-out',
           open ? 'translate-x-0' : '-translate-x-full lg:translate-x-0',
         )}
+        style={{
+          width: '240px',
+          background: 'linear-gradient(180deg, #071525 0%, #0B1E35 100%)',
+          boxShadow: '4px 0 24px rgba(7,21,37,0.20)',
+        }}
       >
-        {/* Logo */}
-        <div className="flex items-center justify-between px-5 py-5 border-b border-slate-200">
-          <div className="flex items-center gap-2.5">
-            <div className="p-1.5 rounded-lg bg-primary-500">
-              <Receipt className="w-5 h-5 text-white" />
+        {/* ── Brand ────────────────────────────────────────────── */}
+        <div className="flex items-center justify-between px-5 py-5"
+             style={{ borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+          <div className="flex items-center gap-3">
+            {/* Logo mark */}
+            <div className="relative flex items-center justify-center w-8 h-8 rounded-lg shrink-0"
+                 style={{ background: 'linear-gradient(135deg, #F97316, #E05A00)', boxShadow: '0 2px 8px rgba(249,115,22,0.40)' }}>
+              <Zap className="w-4 h-4 text-white" fill="white" />
             </div>
-            <span className="text-base font-bold text-slate-900 tracking-tight">InvoiceApp</span>
+            <div>
+              <p className="text-sm font-bold text-white leading-tight tracking-tight">InvoiceApp</p>
+              <p className="text-[10px] font-medium tracking-widest uppercase"
+                 style={{ color: '#F97316' }}>StallionSI</p>
+            </div>
           </div>
+
+          {/* Close — mobile only */}
           <button
             onClick={onClose}
-            className="lg:hidden p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors duration-200"
+            className="lg:hidden flex items-center justify-center w-7 h-7 rounded-md transition-colors"
+            style={{ color: '#4A80C4' }}
             aria-label="Close menu"
           >
             <X className="w-4 h-4" />
           </button>
         </div>
 
-        {/* Nav */}
-        <nav className="flex-1 py-4 px-3 space-y-0.5">
+        {/* ── Navigation ────────────────────────────────────────── */}
+        <nav className="flex-1 py-4 px-3 space-y-0.5 overflow-y-auto">
           {links.map(({ to, label, icon: Icon, end }) => (
             <NavLink
               key={to}
@@ -66,27 +80,42 @@ export default function Sidebar({ open, onClose }) {
               onClick={onClose}
               className={({ isActive }) =>
                 clsx(
-                  'flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200',
+                  'relative flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium',
+                  'transition-all duration-150 select-none',
                   isActive
-                    /* Active: blue-100 bg, blue-700 text — exactly per spec */
-                    ? 'bg-blue-100 text-blue-700'
-                    : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900',
+                    ? 'nav-item-active text-white'
+                    : 'text-navy-300 hover:text-white',
                 )
+              }
+              style={({ isActive }) =>
+                isActive
+                  ? { background: 'rgba(59,123,248,0.14)', color: '#FFFFFF' }
+                  : {}
               }
             >
               {({ isActive }) => (
                 <>
-                  <Icon className={clsx('w-4 h-4 shrink-0', isActive ? 'text-blue-600' : 'text-slate-400')} />
-                  {label}
+                  <Icon
+                    className="w-4 h-4 shrink-0 transition-colors"
+                    style={{ color: isActive ? '#6BA3FF' : '#4A80C4' }}
+                  />
+                  <span>{label}</span>
+                  {isActive && (
+                    <span className="ml-auto w-1.5 h-1.5 rounded-full bg-primary-400 shrink-0" />
+                  )}
                 </>
               )}
             </NavLink>
           ))}
         </nav>
 
-        {/* Footer */}
-        <div className="px-5 py-4 border-t border-slate-200">
-          <p className="text-xs text-slate-400">Invoice Manager v1.0</p>
+        {/* ── Footer ────────────────────────────────────────────── */}
+        <div className="px-5 py-4"
+             style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+          <p className="text-[10px] font-medium tracking-widest uppercase"
+             style={{ color: '#2B5EA0' }}>
+            Invoice Manager · v1.0
+          </p>
         </div>
       </aside>
     </>
