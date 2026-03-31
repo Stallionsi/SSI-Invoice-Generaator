@@ -1,6 +1,7 @@
 import { useFieldArray, useWatch } from 'react-hook-form';
 import { Plus, Trash2 } from 'lucide-react';
 import { calcLineItem, fmtCurrency } from '../../utils/calculations';
+import { useMediaQuery } from '../../hooks/useMediaQuery';
 
 const defaultItem = {
   description: '',
@@ -13,11 +14,12 @@ const defaultItem = {
 export default function LineItemEditor({ control, register, errors, currency = 'INR', isINR = true }) {
   const { fields, append, remove } = useFieldArray({ control, name: 'lineItems' });
   const lineItems = useWatch({ control, name: 'lineItems' });
+  const isDesktop = useMediaQuery('(min-width: 768px)');
 
   return (
     <div className="space-y-3">
       {/* ── Desktop table (md+) ── */}
-      <div className="hidden md:block overflow-x-auto">
+      {isDesktop && <div className="overflow-x-auto">
         <table className="w-full text-sm min-w-[560px]">
           <thead>
             <tr className="text-xs text-gray-500 uppercase border-b border-gray-200">
@@ -78,10 +80,10 @@ export default function LineItemEditor({ control, register, errors, currency = '
             })}
           </tbody>
         </table>
-      </div>
+      </div>}
 
       {/* ── Mobile card layout (< md) ── */}
-      <div className="md:hidden space-y-3">
+      {!isDesktop && <div className="space-y-3">
         {fields.map((field, i) => {
           const vals = lineItems?.[i] || {};
           const { lineTotal } = calcLineItem(vals);
@@ -137,7 +139,7 @@ export default function LineItemEditor({ control, register, errors, currency = '
             </div>
           );
         })}
-      </div>
+      </div>}
 
       <button
         type="button"
