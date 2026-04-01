@@ -5,7 +5,7 @@ const Client = require('../models/Client.model');
 const Company = require('../models/Company.model');
 const { generateInvoicePdf } = require('./pdf.service');
 const { calculateLineItem, calculateInvoiceTotals, calculateDueDate } = require('../utils/calculation.util');
-const { generateInvoiceNumber } = require('../utils/invoiceNumber.util');
+const { getNextClientInvoiceNumber } = require('../utils/invoiceNumber.util');
 const { parsePagination, buildPaginationMeta, parseInvoiceFilters } = require('../utils/pagination.util');
 const { addPdfJob, scheduleReminder, addWebhookJob } = require('../config/queue');
 const emailService = require('./email.service');
@@ -97,34 +97,41 @@ const create = async (data, companyId, userId) => {
           || 'Net 30',
       );
 
-  // Use provided invoice number if given; otherwise auto-generate and increment counter.
-  // When caller supplies a number we do NOT touch the counter — avoids gaps.
+  // ── Invoice Number Resolution (per-client sequence) ───────────────────────
+  // Collision checks are scoped to (company + client) — different clients may
+  // share the same invoice number and that is intentional.
   let invoiceNumber;
   if (data.invoiceNumber && data.invoiceNumber.trim()) {
     invoiceNumber = data.invoiceNumber.trim();
-    // If the suggested number is already taken, bump the numeric suffix until free
-    if (await Invoice.exists({ company: companyId, invoiceNumber })) {
+
+    const taken = await Invoice.exists({
+      company:       companyId,
+      client:        client._id,
+      invoiceNumber,
+    });
+
+    if (taken) {
+      // Number already used for this client — bump within their own sequence
       const parts  = invoiceNumber.split('-');
       const suffix = parts[parts.length - 1];
       const num    = parseInt(suffix, 10);
-      const prefix = parts.slice(0, -1).join('-');
+      const pfx    = parts.slice(0, -1).join('-');
       const pad    = suffix.length;
 
-      if (!isNaN(num) && prefix) {
+      if (!isNaN(num) && pfx) {
         let next = num + 1;
         let candidate;
         do {
-          candidate = `${prefix}-${String(next).padStart(pad, '0')}`;
+          candidate = `${pfx}-${String(next).padStart(pad, '0')}`;
           next++;
-        } while (await Invoice.exists({ company: companyId, invoiceNumber: candidate }));
+        } while (await Invoice.exists({ company: companyId, client: client._id, invoiceNumber: candidate }));
         invoiceNumber = candidate;
       } else {
-        // Can't parse suffix — fall back to auto-generate
-        invoiceNumber = await generateInvoiceNumber(companyId);
+        invoiceNumber = await getNextClientInvoiceNumber(companyId, client._id);
       }
     }
   } else {
-    invoiceNumber = await generateInvoiceNumber(companyId);
+    invoiceNumber = await getNextClientInvoiceNumber(companyId, client._id);
   }
 
   // Unique view token for client-facing link

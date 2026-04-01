@@ -16,7 +16,7 @@ function SkeletonRow() {
     <tr>
       {[1, 2, 3, 4, 5, 6].map((i) => (
         <td key={i} className="px-6 py-4">
-          <div className="h-4 bg-slate-100 rounded animate-pulse" style={{ width: i === 5 ? '60%' : '80%' }} />
+          <div className="h-4 bg-indigo-50 rounded-lg animate-pulse" style={{ width: i === 5 ? '60%' : '80%' }} />
         </td>
       ))}
     </tr>
@@ -155,40 +155,56 @@ export default function Invoices() {
               }
             />
           ) : (
-            <table className="w-full text-sm min-w-[600px]">
-              <thead className="bg-slate-50 border-b border-slate-200">
+            <table className="table-premium w-full text-sm min-w-[600px]">
+              <thead>
                 <tr>
-                  <th className="text-left px-6 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide whitespace-nowrap">#</th>
-                  <th className="text-left px-6 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide whitespace-nowrap">Client</th>
-                  <th className="text-left px-6 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide whitespace-nowrap">Date</th>
-                  <th className="text-left px-6 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide whitespace-nowrap">Due</th>
-                  <th className="text-right px-6 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide whitespace-nowrap">Amount</th>
-                  <th className="text-left px-6 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide whitespace-nowrap">Status</th>
+                  <th>#</th>
+                  <th>Client</th>
+                  <th>Date</th>
+                  <th>Due</th>
+                  <th className="text-right">Amount</th>
+                  <th>Status</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100">
+              <tbody>
                 {isLoading
                   ? Array.from({ length: 6 }).map((_, i) => <SkeletonRow key={i} />)
-                  : invoices.map((inv) => (
-                      <tr
-                        key={inv._id}
-                        className={`hover:bg-slate-50 cursor-pointer transition-all duration-150 ${isFetching ? 'opacity-60' : ''}`}
-                        onClick={() => navigate(`/invoices/${inv._id}`)}
-                      >
-                        <td className="px-6 py-4 font-semibold text-primary-600 whitespace-nowrap">{inv.invoiceNumber}</td>
-                        <td className="px-6 py-4 text-slate-800 max-w-[200px] truncate">
-                          {inv.client?.clientName || inv.recipientDetails?.name || '—'}
-                        </td>
-                        <td className="px-6 py-4 text-slate-500 whitespace-nowrap">{fmtDate(inv.invoiceDate)}</td>
-                        <td className="px-6 py-4 text-slate-500 whitespace-nowrap">{fmtDate(inv.dueDate)}</td>
-                        <td className="px-6 py-4 text-right font-semibold text-slate-900 whitespace-nowrap">
-                          {fmtCurrency(inv.grandTotal, inv.currency)}
-                        </td>
-                        <td className="px-6 py-4">
-                          <StatusBadge status={inv.status} />
-                        </td>
-                      </tr>
-                    ))}
+                  : invoices.map((inv) => {
+                      const clientName = inv.client?.clientName || inv.recipientDetails?.name || '—';
+                      const initial = clientName.charAt(0).toUpperCase();
+                      return (
+                        <tr
+                          key={inv._id}
+                          className={isFetching ? 'opacity-60' : ''}
+                          onClick={() => navigate(`/invoices/${inv._id}`)}
+                        >
+                          <td>
+                            <span className="font-bold text-primary-600 hover:text-primary-700 whitespace-nowrap">
+                              {inv.invoiceNumber}
+                            </span>
+                          </td>
+                          <td>
+                            <div className="flex items-center gap-2.5 max-w-[200px]">
+                              <div
+                                className="w-7 h-7 rounded-lg flex items-center justify-center text-[11px] font-bold text-white shrink-0"
+                                style={{ background: 'linear-gradient(135deg, #6366F1, #4F46E5)' }}
+                              >
+                                {initial}
+                              </div>
+                              <span className="text-gray-800 font-medium truncate">{clientName}</span>
+                            </div>
+                          </td>
+                          <td className="text-gray-500 whitespace-nowrap">{fmtDate(inv.invoiceDate)}</td>
+                          <td className="text-gray-500 whitespace-nowrap">{fmtDate(inv.dueDate)}</td>
+                          <td className="text-right font-bold text-gray-900 whitespace-nowrap">
+                            {fmtCurrency(inv.grandTotal, inv.currency)}
+                          </td>
+                          <td>
+                            <StatusBadge status={inv.status} />
+                          </td>
+                        </tr>
+                      );
+                    })}
               </tbody>
             </table>
           )}
@@ -196,8 +212,8 @@ export default function Invoices() {
 
         {/* Pagination */}
         {!isLoading && pagination.totalPages > 1 && (
-          <div className="flex items-center justify-between px-6 py-3 border-t border-slate-200 text-sm">
-            <p className="text-slate-500 text-xs">
+          <div className="flex items-center justify-between px-6 py-3 border-t border-indigo-50 text-sm">
+            <p className="text-gray-400 text-xs">
               Page <span className="font-medium">{pagination.page}</span> of{' '}
               <span className="font-medium">{pagination.totalPages}</span>
               <span className="hidden sm:inline"> &bull; {total} total</span>

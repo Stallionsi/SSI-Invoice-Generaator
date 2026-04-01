@@ -1,12 +1,12 @@
 import clsx from 'clsx';
 
 const MAP = {
-  draft:     'bg-slate-200    text-slate-700',
+  draft:     'bg-gray-100     text-gray-600',
   sent:      'bg-primary-100  text-primary-700',
   partial:   'bg-amber-100    text-amber-700',
   paid:      'bg-emerald-100  text-emerald-700',
   overdue:   'bg-rose-100     text-rose-700',
-  cancelled: 'bg-slate-100    text-slate-500',
+  cancelled: 'bg-gray-100     text-gray-500',
   viewed:    'bg-teal-100     text-teal-700',
 };
 

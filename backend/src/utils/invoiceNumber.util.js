@@ -1,102 +1,83 @@
-const Company  = require('../models/Company.model');
+const Company = require('../models/Company.model');
 const Invoice  = require('../models/Invoice.model');
 const { INVOICE_NUMBER_PREFIX, INVOICE_NUMBER_PADDING } = require('../config/env');
 
 /**
- * Generates the next sequential invoice number for a company.
- * Uses findOneAndUpdate with $inc for atomic increment —
- * safe under concurrent load (thousands of invoices/day).
+ * Returns the next available invoice number for a specific client.
  *
- * Format: {PREFIX}-{YEAR}-{PADDED_NUMBER}
- * Example: INV-2024-000042
+ * Rules:
+ *  - Existing client → last invoice number + 1, walking forward past any gaps
+ *  - New client      → company.invoiceSettings.nextNumber (configurable starting point)
+ *
+ * Collision check is scoped to (company + client).
+ * Two different clients CAN share the same invoice number — this is intentional.
  */
-const generateInvoiceNumber = async (companyId) => {
-  const year = new Date().getFullYear();
-
-  const company = await Company.findOneAndUpdate(
-    { _id: companyId },
-    { $inc: { 'invoiceSettings.nextNumber': 1 } },
-    { new: false, select: 'invoiceSettings' } // returns BEFORE increment → current number
-  );
-
-  if (!company) throw new Error('Company not found for invoice number generation');
-
-  const currentNumber = company.invoiceSettings?.nextNumber || 1;
-  const prefix        = company.invoiceSettings?.prefix || INVOICE_NUMBER_PREFIX || 'INV';
-  const padding       = parseInt(INVOICE_NUMBER_PADDING || '6', 10);
-
-  const padded = String(currentNumber).padStart(padding, '0');
-  return `${prefix}-${year}-${padded}`;
-};
-
-/**
- * Preview the next invoice number without incrementing the counter.
- */
-const previewNextInvoiceNumber = async (companyId) => {
-  const year = new Date().getFullYear();
-  const company = await Company.findById(companyId).select('invoiceSettings');
-  if (!company) throw new Error('Company not found');
-
-  const nextNumber = company.invoiceSettings?.nextNumber || 1;
-  const prefix     = company.invoiceSettings?.prefix || INVOICE_NUMBER_PREFIX || 'INV';
-  const padding    = parseInt(INVOICE_NUMBER_PADDING || '6', 10);
-
-  return `${prefix}-${year}-${String(nextNumber).padStart(padding, '0')}`;
-};
-
-/**
- * Preview the next invoice number based on a specific client's last invoice.
- * Finds the most recent invoice for {company, client}, parses its numeric suffix,
- * and returns PREFIX-YEAR-(lastNum+1).
- * Falls back to the company counter preview when the client has no prior invoices.
- */
-const previewNextForClient = async (companyId, clientId) => {
+const getNextClientInvoiceNumber = async (companyId, clientId) => {
   const company = await Company.findById(companyId).select('invoiceSettings').lean();
   if (!company) throw new Error('Company not found');
 
   const prefix  = company.invoiceSettings?.prefix || INVOICE_NUMBER_PREFIX || 'INV';
   const padding = parseInt(INVOICE_NUMBER_PADDING || '6', 10);
   const year    = new Date().getFullYear();
+  const startAt = company.invoiceSettings?.nextNumber || 1;
 
-  // Most recent invoice for this client under this company
+  // Most recent invoice for THIS client only
   const last = await Invoice
     .findOne({ company: companyId, client: clientId })
     .sort({ createdAt: -1 })
     .select('invoiceNumber')
     .lean();
 
+  let candidate;
   if (!last) {
-    // Client has no invoices yet — fall back to the company's most recent invoice
-    const lastCompany = await Invoice
-      .findOne({ company: companyId })
-      .sort({ createdAt: -1 })
-      .select('invoiceNumber')
-      .lean();
-
-    if (lastCompany) {
-      const parts   = lastCompany.invoiceNumber.split('-');
-      const lastNum = parseInt(parts[parts.length - 1], 10);
-      if (!isNaN(lastNum)) {
-        return `${prefix}-${year}-${String(lastNum + 1).padStart(padding, '0')}`;
-      }
-    }
-
-    // Absolute fallback — no invoices exist at all
-    const nextNumber = company.invoiceSettings?.nextNumber || 1;
-    return `${prefix}-${year}-${String(nextNumber).padStart(padding, '0')}`;
+    // New client — start from the company's configured starting number
+    candidate = startAt;
+  } else {
+    const parts   = last.invoiceNumber.split('-');
+    const lastNum = parseInt(parts[parts.length - 1], 10);
+    // If the stored number can't be parsed fall back to the starting number
+    candidate = isNaN(lastNum) ? startAt : lastNum + 1;
   }
 
-  // Parse the numeric suffix — works for "SSI/COM-2026-002001" → 2001
-  const parts  = last.invoiceNumber.split('-');
-  const lastNum = parseInt(parts[parts.length - 1], 10);
+  // Walk forward until the number is free FOR THIS CLIENT.
+  // Different clients may already hold the same number — we do NOT skip those.
+  let candidateStr;
+  do {
+    candidateStr = `${prefix}-${year}-${String(candidate).padStart(padding, '0')}`;
+    const taken = await Invoice.findOne({
+      company:       companyId,
+      client:        clientId,
+      invoiceNumber: candidateStr,
+    }).select('_id').lean();
+    if (!taken) break;
+    candidate++;
+  } while (true);
 
-  if (isNaN(lastNum)) {
-    // Can't parse — fall back to company counter preview
-    const nextNumber = company.invoiceSettings?.nextNumber || 1;
-    return `${prefix}-${year}-${String(nextNumber).padStart(padding, '0')}`;
-  }
-
-  return `${prefix}-${year}-${String(lastNum + 1).padStart(padding, '0')}`;
+  return candidateStr;
 };
 
-module.exports = { generateInvoiceNumber, previewNextInvoiceNumber, previewNextForClient };
+/**
+ * Preview the next invoice number for a client — used by the GET /next-number API.
+ * Delegates to getNextClientInvoiceNumber (no side effects).
+ */
+const previewNextForClient = async (companyId, clientId) => {
+  return getNextClientInvoiceNumber(companyId, clientId);
+};
+
+/**
+ * Fallback preview shown before a client is selected.
+ * Just displays what a new client's first invoice would look like.
+ */
+const previewNextInvoiceNumber = async (companyId) => {
+  const company = await Company.findById(companyId).select('invoiceSettings').lean();
+  if (!company) throw new Error('Company not found');
+
+  const prefix  = company.invoiceSettings?.prefix || INVOICE_NUMBER_PREFIX || 'INV';
+  const padding = parseInt(INVOICE_NUMBER_PADDING || '6', 10);
+  const year    = new Date().getFullYear();
+  const startAt = company.invoiceSettings?.nextNumber || 1;
+
+  return `${prefix}-${year}-${String(startAt).padStart(padding, '0')}`;
+};
+
+module.exports = { getNextClientInvoiceNumber, previewNextForClient, previewNextInvoiceNumber };

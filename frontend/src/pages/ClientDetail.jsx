@@ -32,7 +32,7 @@ const renderCustomValue = (value, fieldType, fieldDef) => {
         {value.map((v) => {
           const opt = opts.find((o) => o.value === v);
           return (
-            <span key={v} className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+            <span key={v} className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-indigo-100 text-indigo-700">
               {opt?.label || v}
             </span>
           );
@@ -44,17 +44,17 @@ const renderCustomValue = (value, fieldType, fieldDef) => {
   switch (fieldType) {
     case 'boolean':
       return (
-        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${value ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-200 text-slate-600'}`}>
+        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${value ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-200 text-gray-600'}`}>
           {value ? 'Yes' : 'No'}
         </span>
       );
     case 'email':
-      return <a href={`mailto:${value}`} className="text-blue-600 hover:underline">{value}</a>;
+      return <a href={`mailto:${value}`} className="text-primary-600 hover:underline font-medium">{value}</a>;
     case 'phone':
-      return <a href={`tel:${value}`} className="text-blue-600 hover:underline">{value}</a>;
+      return <a href={`tel:${value}`} className="text-primary-600 hover:underline font-medium">{value}</a>;
     case 'url': {
       const href = /^https?:\/\//i.test(value) ? value : `https://${value}`;
-      return <a href={href} target="_blank" rel="noreferrer" className="text-blue-600 hover:underline max-w-xs block truncate">{value}</a>;
+      return <a href={href} target="_blank" rel="noreferrer" className="text-primary-600 hover:underline font-medium max-w-xs block truncate">{value}</a>;
     }
     case 'date':
       return fmtDate(value) || value;
@@ -66,7 +66,7 @@ const renderCustomValue = (value, fieldType, fieldDef) => {
       return `${value}%`;
     case 'autoCode':
     case 'refId':
-      return <span className="font-mono text-xs bg-blue-50 text-blue-700 border border-blue-200 px-2 py-0.5 rounded">{value}</span>;
+      return <span className="font-mono text-xs bg-indigo-50 text-indigo-700 border border-indigo-200 px-2 py-0.5 rounded-md">{value}</span>;
     case 'dropdown':
     case 'select':
     case 'radio': {
@@ -91,20 +91,30 @@ function InfoRow({ label, children }) {
 }
 
 function StatCard({ icon: Icon, label, value, color = 'blue' }) {
-  const colors = {
-    blue:   'bg-primary-50  text-primary-700',
-    green:  'bg-emerald-50  text-emerald-700',
-    amber:  'bg-amber-50    text-amber-700',
-    purple: 'bg-teal-50     text-teal-700',
+  const palette = {
+    blue:   { card: '#EEF2FF', iconBg: '#E0E7FF', iconFg: '#4F46E5', val: '#1E1B4B', lbl: '#4338CA' },
+    green:  { card: '#F0FDF4', iconBg: '#DCFCE7', iconFg: '#16A34A', val: '#14532D', lbl: '#15803D' },
+    amber:  { card: '#FFFBEB', iconBg: '#FEF3C7', iconFg: '#D97706', val: '#451A03', lbl: '#B45309' },
+    purple: { card: '#FAF5FF', iconBg: '#F3E8FF', iconFg: '#9333EA', val: '#3B0764', lbl: '#7E22CE' },
   };
+  const p = palette[color] || palette.blue;
   return (
-    <div className="card flex items-center gap-4 py-4">
-      <div className={`p-2.5 rounded-lg ${colors[color]}`}>
-        <Icon className="w-5 h-5" />
-      </div>
-      <div>
-        <p className="text-xs text-gray-500 font-medium uppercase tracking-wide">{label}</p>
-        <p className="text-lg font-semibold text-gray-900">{value}</p>
+    <div
+      className="stat-card"
+      style={{ background: p.card, border: 'none' }}
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="text-[11px] font-bold uppercase tracking-widest mb-2" style={{ color: p.lbl }}>
+            {label}
+          </p>
+          <p className="text-2xl font-extrabold tabular-nums" style={{ color: p.val }}>
+            {value}
+          </p>
+        </div>
+        <div className="rounded-xl p-2.5 shrink-0" style={{ background: p.iconBg }}>
+          <Icon className="w-5 h-5" style={{ color: p.iconFg }} />
+        </div>
       </div>
     </div>
   );
@@ -145,15 +155,15 @@ function TaxInfoSection({ client }) {
 
   return (
     <div className="card space-y-4">
-      <h2 className="text-sm font-semibold text-slate-700 flex items-center gap-2">
-        <CreditCard className="w-4 h-4 text-slate-400" />
+      <h2 className="text-sm font-semibold text-gray-700 flex items-center gap-2">
+        <CreditCard className="w-4 h-4 text-gray-400" />
         Tax Information
-        <span className="ml-1 text-xs font-normal text-slate-400">({country})</span>
+        <span className="ml-1 text-xs font-normal text-gray-400">({country})</span>
       </h2>
       {rows.map(({ label, value, sensitive }) => (
         <InfoRow key={label} label={label}>
           {value
-            ? <span className={sensitive ? 'font-mono text-sm tracking-widest text-slate-500' : undefined}>{value}</span>
+            ? <span className={sensitive ? 'font-mono text-sm tracking-widest text-gray-500' : undefined}>{value}</span>
             : null}
         </InfoRow>
       ))}
@@ -230,30 +240,57 @@ export default function ClientDetail() {
   return (
     <div className="space-y-6">
 
-      {/* Header */}
-      <div className="flex items-start justify-between gap-4">
-        <div className="flex items-start gap-3">
-          <button className="btn btn-secondary mt-0.5" onClick={() => navigate('/clients')}>
-            <ArrowLeft className="w-4 h-4" />
-          </button>
-          <div>
-            <h1 className="text-xl font-bold text-gray-900">{client.clientName}</h1>
-            {client.companyName && <p className="text-sm text-gray-500 mt-0.5">{client.companyName}</p>}
+      {/* Profile Hero Header */}
+      <div
+        className="rounded-2xl p-6 relative overflow-hidden"
+        style={{
+          background: 'linear-gradient(135deg, #4F46E5 0%, #6366F1 50%, #7C3AED 100%)',
+          boxShadow: '0 8px 32px rgba(99,102,241,0.30)',
+        }}
+      >
+        {/* Decorative circles */}
+        <div className="absolute -top-8 -right-8 w-40 h-40 rounded-full opacity-10" style={{ background: 'white' }} />
+        <div className="absolute -bottom-10 -right-4 w-28 h-28 rounded-full opacity-10" style={{ background: 'white' }} />
+
+        <div className="relative flex items-start justify-between gap-4">
+          <div className="flex items-center gap-4">
+            <button
+              className="flex items-center justify-center w-9 h-9 rounded-xl bg-white/20 hover:bg-white/30 text-white transition-colors shrink-0"
+              onClick={() => navigate('/clients')}
+            >
+              <ArrowLeft className="w-4 h-4" />
+            </button>
+            {/* Avatar */}
+            <div
+              className="w-14 h-14 rounded-2xl flex items-center justify-center text-xl font-bold text-white shrink-0"
+              style={{ background: 'rgba(255,255,255,0.20)', border: '2px solid rgba(255,255,255,0.30)' }}
+            >
+              {(client.clientName || '?').charAt(0).toUpperCase()}
+            </div>
+            <div>
+              <h1 className="text-xl font-extrabold text-white tracking-tight">{client.clientName}</h1>
+              {client.companyName && (
+                <p className="text-sm text-indigo-200 mt-0.5 flex items-center gap-1.5">
+                  <Building2 className="w-3.5 h-3.5" /> {client.companyName}
+                </p>
+              )}
+            </div>
           </div>
-        </div>
-        <div className="flex items-center gap-2 shrink-0">
-          <button
-            className="btn btn-secondary"
-            onClick={() => navigate(`/clients/${id}/edit`)}
-          >
-            <Pencil className="w-4 h-4" /> Edit
-          </button>
-          <button
-            className="btn btn-danger"
-            onClick={() => setConfirmDelete(true)}
-          >
-            <Trash2 className="w-4 h-4" /> Delete
-          </button>
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              className="flex items-center gap-1.5 h-8 px-3 rounded-xl text-xs font-semibold bg-white/20 hover:bg-white/30 text-white border border-white/20 transition-all"
+              onClick={() => navigate(`/clients/${id}/edit`)}
+            >
+              <Pencil className="w-3.5 h-3.5" /> Edit
+            </button>
+            <button
+              className="flex items-center gap-1.5 h-8 px-3 rounded-xl text-xs font-semibold transition-all"
+              style={{ background: 'rgba(244,63,94,0.25)', border: '1px solid rgba(244,63,94,0.40)', color: '#FCA5A5' }}
+              onClick={() => setConfirmDelete(true)}
+            >
+              <Trash2 className="w-3.5 h-3.5" /> Delete
+            </button>
+          </div>
         </div>
       </div>
 
@@ -274,17 +311,17 @@ export default function ClientDetail() {
           </h2>
           <InfoRow label="Email">
             {client.email
-              ? <a href={`mailto:${client.email}`} className="text-blue-600 hover:underline">{client.email}</a>
+              ? <a href={`mailto:${client.email}`} className="text-primary-600 hover:underline font-medium">{client.email}</a>
               : null}
           </InfoRow>
           <InfoRow label="Phone">
             {client.phone
-              ? <a href={`tel:${client.phone}`} className="text-blue-600 hover:underline">{client.phone}</a>
+              ? <a href={`tel:${client.phone}`} className="text-primary-600 hover:underline font-medium">{client.phone}</a>
               : null}
           </InfoRow>
           {client.alternatePhone && (
             <InfoRow label="Alternate Phone">
-              <a href={`tel:${client.alternatePhone}`} className="text-blue-600 hover:underline">{client.alternatePhone}</a>
+              <a href={`tel:${client.alternatePhone}`} className="text-primary-600 hover:underline font-medium">{client.alternatePhone}</a>
             </InfoRow>
           )}
         </div>

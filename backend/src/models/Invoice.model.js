@@ -312,7 +312,10 @@ const invoiceSchema = new mongoose.Schema(
 );
 
 // ─── Indexes ───────────────────────────────────────────────────────────────
-invoiceSchema.index({ company: 1, invoiceNumber: 1 }, { unique: true });
+// Per-client uniqueness: Compucom and Primacysi can both have invoice 2001.
+// If upgrading from the old schema, drop the old index manually in MongoDB:
+//   db.invoices.dropIndex("company_1_invoiceNumber_1")
+invoiceSchema.index({ company: 1, client: 1, invoiceNumber: 1 }, { unique: true });
 invoiceSchema.index({ company: 1, status: 1 });
 invoiceSchema.index({ company: 1, client: 1 });
 invoiceSchema.index({ company: 1, dueDate: 1 });

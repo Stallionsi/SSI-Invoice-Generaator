@@ -81,29 +81,42 @@ export default function Clients() {
           />
         ) : (
           <div className="overflow-x-auto">
-          <table className="w-full text-sm min-w-[520px]">
-            <thead className="bg-gray-50 border-b border-gray-100">
+          <table className="table-premium w-full text-sm min-w-[520px]">
+            <thead>
               <tr>
-                <th className="text-left px-4 md:px-6 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Name</th>
-                <th className="text-left px-4 md:px-6 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide hidden sm:table-cell">Email</th>
-                <th className="text-left px-4 md:px-6 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide hidden md:table-cell">Phone</th>
-                <th className="text-left px-4 md:px-6 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide hidden md:table-cell">Currency</th>
-                <th className="px-4 md:px-6 py-3" />
+                <th>Name</th>
+                <th className="hidden sm:table-cell">Email</th>
+                <th className="hidden md:table-cell">Phone</th>
+                <th className="hidden md:table-cell">Currency</th>
+                <th />
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-50">
+            <tbody>
               {clients.map((c) => (
                 <tr
                   key={c._id}
-                  className="hover:bg-gray-50 transition-colors cursor-pointer"
                   onClick={() => navigate(`/clients/${c._id}`)}
                 >
-                  <td className="px-4 md:px-6 py-4 font-medium text-gray-900">{c.clientName}</td>
-                  <td className="px-4 md:px-6 py-4 text-gray-600 hidden sm:table-cell">{c.email || '—'}</td>
-                  <td className="px-4 md:px-6 py-4 text-gray-600 hidden md:table-cell">{c.phone || '—'}</td>
-                  <td className="px-4 md:px-6 py-4 text-gray-600 hidden md:table-cell">{c.currency || 'INR'}</td>
-                  <td className="px-4 md:px-6 py-4" onClick={(e) => e.stopPropagation()}>
-                    <div className="flex items-center justify-end gap-2">
+                  <td>
+                    <div className="flex items-center gap-3">
+                      <div
+                        className="w-8 h-8 rounded-xl flex items-center justify-center text-xs font-bold text-white shrink-0"
+                        style={{ background: 'linear-gradient(135deg, #6366F1, #7C3AED)' }}
+                      >
+                        {(c.clientName || '?').charAt(0).toUpperCase()}
+                      </div>
+                      <span className="font-semibold text-gray-900">{c.clientName}</span>
+                    </div>
+                  </td>
+                  <td className="text-gray-500 hidden sm:table-cell">{c.email || '—'}</td>
+                  <td className="text-gray-500 hidden md:table-cell">{c.phone || '—'}</td>
+                  <td className="hidden md:table-cell">
+                    <span className="inline-flex items-center px-2 py-0.5 rounded-md text-xs font-semibold bg-indigo-50 text-indigo-700">
+                      {c.currency || 'INR'}
+                    </span>
+                  </td>
+                  <td onClick={(e) => e.stopPropagation()}>
+                    <div className="flex items-center justify-end gap-1.5">
                       <button
                         className="btn btn-secondary btn-sm"
                         onClick={() => navigate(`/clients/${c._id}`)}

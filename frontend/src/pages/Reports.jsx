@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useRef } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import {
@@ -17,7 +17,70 @@ import StatusBadge from '../components/ui/StatusBadge';
 import toast from 'react-hot-toast';
 
 // ── Constants ───────────────────────────────────────────────────────────────
-const AGING_COLORS = ['#3b82f6', '#f59e0b', '#ef4444', '#dc2626', '#7f1d1d'];
+const AGING_COLORS = ['#6366F1', '#f59e0b', '#ef4444', '#dc2626', '#7f1d1d'];
+
+// ── Custom dropdown — always opens downward ──────────────────────────────────
+function DropDown({ value, onChange, options }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+
+  // Close on outside click
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [open]);
+
+  const selected = options.find((o) => o.value === value);
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((p) => !p)}
+        className="flex items-center gap-2 h-9 px-3 rounded-xl text-sm font-semibold bg-white border border-gray-200 text-gray-700 hover:border-indigo-300 hover:bg-indigo-50/50 transition-all duration-150"
+        style={{ boxShadow: '0 1px 3px rgba(0,0,0,0.06)', minWidth: 90 }}
+      >
+        <span className="flex-1 text-left">{selected?.label ?? value}</span>
+        <ChevronDown
+          className="w-3.5 h-3.5 shrink-0 text-gray-400 transition-transform duration-200"
+          style={{ transform: open ? 'rotate(180deg)' : 'rotate(0deg)' }}
+        />
+      </button>
+
+      {open && (
+        <div
+          className="absolute left-0 top-full mt-1.5 z-50 rounded-xl overflow-hidden"
+          style={{
+            background: '#FFFFFF',
+            border: '1px solid #EEF2FF',
+            boxShadow: '0 8px 24px rgba(99,102,241,0.12), 0 2px 8px rgba(0,0,0,0.06)',
+            minWidth: '100%',
+          }}
+        >
+          {options.map((o) => (
+            <button
+              key={o.value}
+              type="button"
+              onClick={() => { onChange(o.value); setOpen(false); }}
+              className="w-full text-left px-3 py-2 text-sm font-medium transition-colors duration-100"
+              style={
+                o.value === value
+                  ? { background: '#EEF2FF', color: '#4F46E5', fontWeight: 700 }
+                  : { color: '#374151' }
+              }
+              onMouseEnter={(e) => { if (o.value !== value) e.currentTarget.style.background = '#F9FAFB'; }}
+              onMouseLeave={(e) => { if (o.value !== value) e.currentTarget.style.background = 'transparent'; }}
+            >
+              {o.label}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
 const MONTH_NAMES  = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
                       'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
@@ -218,20 +281,22 @@ function downloadInvoicesXlsx(invoices) {
 // ── Sub-components ──────────────────────────────────────────────────────────
 
 function StatCard({ icon: Icon, label, value, color = 'blue' }) {
-  const palette = {
-    blue:  'bg-primary-50  text-primary-600',
-    green: 'bg-emerald-50  text-emerald-600',
-    amber: 'bg-amber-50    text-amber-600',
-    red:   'bg-rose-50     text-rose-600',
-  };
+  const p = {
+    blue:   { card: '#EEF2FF', iconBg: '#E0E7FF', iconFg: '#4F46E5', val: '#1E1B4B', lbl: '#4338CA' },
+    green:  { card: '#F0FDF4', iconBg: '#DCFCE7', iconFg: '#16A34A', val: '#14532D', lbl: '#15803D' },
+    amber:  { card: '#FFFBEB', iconBg: '#FEF3C7', iconFg: '#D97706', val: '#451A03', lbl: '#B45309' },
+    red:    { card: '#FFF1F2', iconBg: '#FFE4E6', iconFg: '#E11D48', val: '#4C0519', lbl: '#9F1239' },
+  }[color] || { card: '#EEF2FF', iconBg: '#E0E7FF', iconFg: '#4F46E5', val: '#1E1B4B', lbl: '#4338CA' };
   return (
-    <div className="card flex items-center gap-4 p-5">
-      <div className={`p-3 rounded-xl shrink-0 ${palette[color]}`}>
-        <Icon className="w-5 h-5" />
-      </div>
-      <div className="min-w-0">
-        <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">{label}</p>
-        <p className="text-xl font-bold text-gray-900 mt-0.5 truncate">{value}</p>
+    <div className="stat-card" style={{ background: p.card }}>
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-[11px] font-bold uppercase tracking-widest mb-2 truncate" style={{ color: p.lbl }}>{label}</p>
+          <p className="text-2xl font-extrabold tabular-nums truncate" style={{ color: p.val }}>{value}</p>
+        </div>
+        <div className="rounded-xl p-2.5 shrink-0" style={{ background: p.iconBg }}>
+          <Icon className="w-5 h-5" style={{ color: p.iconFg }} />
+        </div>
       </div>
     </div>
   );
@@ -416,21 +481,14 @@ export default function Reports() {
         actions={
           <div className="flex items-center gap-2">
             {/* ── Client filter dropdown ── */}
-            <div className="relative">
-              <select
-                value={selectedClient}
-                onChange={(e) => setSelectedClient(e.target.value)}
-                className="input pr-8 appearance-none text-sm cursor-pointer min-w-[160px]"
-              >
-                <option value="all">All Clients</option>
-                {clientDropdown.map((c) => (
-                  <option key={c._id} value={c._id}>
-                    {c.clientName}
-                  </option>
-                ))}
-              </select>
-              <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
-            </div>
+            <DropDown
+              value={selectedClient}
+              onChange={(v) => setSelectedClient(v)}
+              options={[
+                { value: 'all', label: 'All Clients' },
+                ...clientDropdown.map((c) => ({ value: c._id, label: c.clientName })),
+              ]}
+            />
             <button className="btn btn-secondary" onClick={handleExport} disabled={isLoading}>
               <Download className="w-4 h-4" />
               <span className="hidden sm:inline">Export Excel</span>
@@ -457,7 +515,7 @@ export default function Reports() {
         <div className="mb-6 space-y-4">
           {/* Combined across all currencies */}
           <div>
-            <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3">
+            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">
               Combined — All Currencies
             </p>
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
@@ -503,7 +561,7 @@ export default function Reports() {
           {/* Per-currency breakdown — each currency as its own column card */}
           {statsByCurrency.length > 0 && (
             <div className="space-y-2">
-              <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
+              <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">
                 Currency Breakdown
               </p>
               <div
@@ -521,42 +579,32 @@ export default function Reports() {
                   ).length;
                   return (
                     <div key={s.currency} className="card p-4">
-                      {/* Currency header */}
-                      <div className="flex items-center justify-between mb-4 pb-2 border-b border-slate-100">
-                        <span className="text-sm font-bold text-slate-800 uppercase tracking-wide">
+                      <div className="flex items-center justify-between mb-4 pb-2" style={{ borderBottom: '1px solid #EEF2FF' }}>
+                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-lg text-xs font-bold bg-indigo-50 text-indigo-700 uppercase tracking-wider">
                           {s.currency}
                         </span>
-                        <span className="text-xs bg-slate-100 text-slate-500 rounded-full px-2 py-0.5">
+                        <span className="text-xs bg-gray-100 text-gray-500 rounded-full px-2 py-0.5 font-medium">
                           {invCount} invoice{invCount !== 1 ? 's' : ''}
                         </span>
                       </div>
-
-                      {/* Stat rows */}
                       <div className="space-y-2.5">
                         <div className="flex items-center justify-between">
-                          <span className="text-xs text-slate-500 flex items-center gap-1.5">
-                            <TrendingUp className="w-3.5 h-3.5 text-blue-400" />
-                            Revenue
+                          <span className="text-xs text-gray-500 flex items-center gap-1.5">
+                            <TrendingUp className="w-3.5 h-3.5 text-indigo-400" /> Revenue
                           </span>
-                          <span className="text-sm font-bold text-slate-900">
-                            {fmtCurrency(s.totalRevenue, s.currency)}
-                          </span>
+                          <span className="text-sm font-bold text-gray-900">{fmtCurrency(s.totalRevenue, s.currency)}</span>
                         </div>
                         <div className="flex items-center justify-between">
-                          <span className="text-xs text-slate-500 flex items-center gap-1.5">
-                            <DollarSign className="w-3.5 h-3.5 text-emerald-400" />
-                            Collected
+                          <span className="text-xs text-gray-500 flex items-center gap-1.5">
+                            <DollarSign className="w-3.5 h-3.5 text-emerald-400" /> Collected
                           </span>
-                          <span className="text-sm font-bold text-emerald-700">
-                            {fmtCurrency(s.totalCollected, s.currency)}
-                          </span>
+                          <span className="text-sm font-bold text-emerald-700">{fmtCurrency(s.totalCollected, s.currency)}</span>
                         </div>
                         <div className="flex items-center justify-between">
-                          <span className="text-xs text-slate-500 flex items-center gap-1.5">
-                            <Clock className="w-3.5 h-3.5 text-amber-400" />
-                            Outstanding
+                          <span className="text-xs text-gray-500 flex items-center gap-1.5">
+                            <Clock className="w-3.5 h-3.5 text-amber-400" /> Outstanding
                           </span>
-                          <span className={`text-sm font-bold ${s.outstanding > 0 ? 'text-amber-600' : 'text-slate-400'}`}>
+                          <span className={`text-sm font-bold ${s.outstanding > 0 ? 'text-amber-600' : 'text-gray-400'}`}>
                             {fmtCurrency(s.outstanding, s.currency)}
                           </span>
                         </div>
@@ -571,12 +619,12 @@ export default function Reports() {
       ) : isMixedCurrency ? (
         /* ── Multi-currency breakdown (All Clients with mixed currencies) ── */
         <div className="mb-6 space-y-3">
-          <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
+          <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">
             Totals by Currency — select a client for a single-currency view
           </p>
           {statsByCurrency.map((s) => (
             <div key={s.currency} className="card p-4">
-              <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3">
+              <p className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3">
                 {s.currency}
               </p>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -624,11 +672,11 @@ export default function Reports() {
       {/* ── Empty state when filtered client has no invoices ─────────────── */}
       {isFiltered && !isLoading && filteredInvoices.length === 0 ? (
         <div className="card flex flex-col items-center justify-center py-20 text-center">
-          <FileText className="w-12 h-12 text-slate-200 mb-4" />
-          <p className="text-base font-semibold text-slate-600">
+          <FileText className="w-12 h-12 text-gray-200 mb-4" />
+          <p className="text-base font-semibold text-gray-600">
             No data for {selectedClientName}
           </p>
-          <p className="text-sm text-slate-400 mt-1">
+          <p className="text-sm text-gray-400 mt-1">
             This client has no invoices in the system.
           </p>
           <button
@@ -653,56 +701,39 @@ export default function Reports() {
           </button>
         ))}
 
-        <div className="w-px h-5 bg-slate-200 mx-1" />
+        <div className="w-px h-5 bg-gray-200 mx-1" />
 
         {/* Month picker — only for monthly */}
         {period === 'monthly' && (
-          <select
+          <DropDown
             value={selectedMonth}
-            onChange={(e) => setSelectedMonth(+e.target.value)}
-            className="input text-sm w-auto"
-          >
-            {MONTH_NAMES.map((m, i) => (
-              <option key={i} value={i}>{m}</option>
-            ))}
-          </select>
+            onChange={(v) => setSelectedMonth(+v)}
+            options={MONTH_NAMES.map((m, i) => ({ value: i, label: m }))}
+          />
         )}
 
         {/* Quarter picker — only for quarterly */}
         {period === 'quarterly' && (
-          <select
+          <DropDown
             value={selectedQuarter}
-            onChange={(e) => setSelectedQuarter(+e.target.value)}
-            className="input text-sm w-auto"
-          >
-            {[1, 2, 3, 4].map((q) => (
-              <option key={q} value={q}>Q{q}</option>
-            ))}
-          </select>
+            onChange={(v) => setSelectedQuarter(+v)}
+            options={[1, 2, 3, 4].map((q) => ({ value: q, label: `Q${q}` }))}
+          />
         )}
 
         {/* Year picker — always visible */}
-        <select
+        <DropDown
           value={selectedYear}
-          onChange={(e) => setSelectedYear(+e.target.value)}
-          className="input text-sm w-auto"
-        >
-          {yearOptions.map((y) => (
-            <option key={y} value={y}>{y}</option>
-          ))}
-        </select>
+          onChange={(v) => setSelectedYear(+v)}
+          options={yearOptions.map((y) => ({ value: y, label: String(y) }))}
+        />
 
         {isMixedCurrency && (
-          <select
+          <DropDown
             value={chartCurrency}
-            onChange={(e) => setChartCurrency(e.target.value)}
-            className="input text-sm ml-auto w-auto"
-            title="Chart currency"
-          >
-            {currenciesInView.map((cur) => (
-              <option key={cur} value={cur}>{cur}</option>
-            ))}
-          </select>
+            onChange={(v) => setChartCurrency(v)}
+            options={currenciesInView.map((cur) => ({ value: cur, label: cur }))}
+          />
         )}
       </div>
 
@@ -727,7 +758,7 @@ export default function Reports() {
           ) : (
             <ResponsiveContainer width="100%" height={260}>
               <BarChart data={chartData} margin={{ top: 4, right: 4, bottom: 0, left: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" vertical={false} />
+                <CartesianGrid strokeDasharray="3 3" stroke="#EEF2FF" vertical={false} />
                 <XAxis
                   dataKey="label"
                   tick={{ fontSize: 11, fill: '#9ca3af' }}
@@ -745,7 +776,7 @@ export default function Reports() {
                   }
                 />
                 <Tooltip content={<RevenueTooltip currency={chartCurrency} />} cursor={{ fill: '#eff6ff' }} />
-                <Bar dataKey="revenue" fill="#3b82f6" radius={[4, 4, 0, 0]} maxBarSize={48} />
+                <Bar dataKey="revenue" fill="#6366F1" radius={[6, 6, 0, 0]} maxBarSize={48} />
               </BarChart>
             </ResponsiveContainer>
           )}
@@ -807,35 +838,35 @@ export default function Reports() {
             </div>
           ) : (
             <div className="overflow-x-auto">
-              <table className="w-full text-sm min-w-[500px]">
-                <thead className="bg-gray-50 border-b border-gray-100">
+              <table className="table-premium w-full text-sm min-w-[500px]">
+                <thead>
                   <tr>
-                    <th className="text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">Client</th>
-                    <th className="text-right px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">Invoices</th>
-                    <th className="text-right px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">Revenue</th>
-                    <th className="text-right px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">Outstanding</th>
-                    <th className="text-right px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">Collected</th>
+                    <th>Client</th>
+                    <th className="text-right">Invoices</th>
+                    <th className="text-right">Revenue</th>
+                    <th className="text-right">Outstanding</th>
+                    <th className="text-right">Collected</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-gray-50">
+                <tbody>
                   {clientList.slice(0, 10).map((c) => {
                     // Look up this client's currency from the dropdown list (which has the full client object)
                     const clientCur = clientDropdown.find((d) => d._id === c._id)?.currency || 'INR';
                     return (
-                      <tr key={c._id} className="hover:bg-gray-50 transition-colors">
+                      <tr key={c._id}>
                         <td className="px-4 py-3">
-                          <p className="font-medium text-gray-800">{c.clientName}</p>
+                          <p className="font-semibold text-gray-800">{c.clientName}</p>
                           {c.companyName && c.companyName !== c.clientName && (
                             <p className="text-xs text-gray-400">{c.companyName}</p>
                           )}
                           {clientCur !== 'INR' && (
-                            <span className="text-xs font-semibold text-slate-400">{clientCur}</span>
+                            <span className="text-xs font-semibold text-gray-400">{clientCur}</span>
                           )}
                         </td>
                         <td className="px-4 py-3 text-right text-gray-500">{c.invoiceCount}</td>
                         <td className="px-4 py-3 text-right font-semibold text-gray-900">{fmtCurrency(c.totalRevenue, clientCur)}</td>
                         <td className="px-4 py-3 text-right">
-                          <span className={n(c.totalDue) > 0 ? 'text-rose-600 font-medium' : 'text-slate-400'}>
+                          <span className={n(c.totalDue) > 0 ? 'text-rose-600 font-medium' : 'text-gray-400'}>
                             {fmtCurrency(c.totalDue, clientCur)}
                           </span>
                         </td>
@@ -853,7 +884,7 @@ export default function Reports() {
       {/* ── Invoice list — shown when a client is selected ───────────────── */}
       {isFiltered && filteredInvoices.length > 0 && (
         <div className="card p-0 overflow-hidden mt-6">
-          <div className="px-4 py-3 border-b border-slate-100 flex items-center justify-between">
+          <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
             <h2 className="text-sm font-semibold text-gray-700">
               Invoices — {selectedClientName} · {periodLabel}
               <span className="text-gray-400 font-normal ml-1.5">({periodFilteredInvoices.length})</span>
@@ -861,25 +892,25 @@ export default function Reports() {
           </div>
           {periodFilteredInvoices.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-10 text-center">
-              <FileText className="w-10 h-10 text-slate-200 mb-3" />
-              <p className="text-sm text-slate-400">No invoices in {periodLabel}</p>
+              <FileText className="w-10 h-10 text-gray-200 mb-3" />
+              <p className="text-sm text-gray-400">No invoices in {periodLabel}</p>
             </div>
           ) : (
           <div className="overflow-x-auto">
-            <table className="w-full text-sm min-w-[640px]">
-              <thead className="bg-slate-50 border-b border-slate-100">
+            <table className="table-premium w-full text-sm min-w-[640px]">
+              <thead>
                 <tr>
-                  <th className="text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">#</th>
-                  <th className="text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">Date</th>
-                  <th className="text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">Due</th>
-                  <th className="text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">Status</th>
-                  <th className="text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">Cur</th>
-                  <th className="text-right px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">Amount</th>
-                  <th className="text-right px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">Collected</th>
-                  <th className="text-right px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">Balance</th>
+                  <th>#</th>
+                  <th>Date</th>
+                  <th>Due</th>
+                  <th>Status</th>
+                  <th>Cur</th>
+                  <th className="text-right">Amount</th>
+                  <th className="text-right">Collected</th>
+                  <th className="text-right">Balance</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-50">
+              <tbody>
                 {periodFilteredInvoices.map((inv) => {
                   const cur        = inv.currency || 'INR';
                   const grandTotal = n(inv.grandTotal);
@@ -888,24 +919,25 @@ export default function Reports() {
                   return (
                     <tr
                       key={inv._id}
-                      className="hover:bg-slate-50 cursor-pointer transition-colors"
                       onClick={() => navigate(`/invoices/${inv._id}`)}
                     >
                       <td className="px-4 py-3 font-semibold text-primary-600 whitespace-nowrap">
                         {inv.invoiceNumber}
                       </td>
-                      <td className="px-4 py-3 text-slate-500 whitespace-nowrap">{fmtDate(inv.invoiceDate)}</td>
-                      <td className="px-4 py-3 text-slate-500 whitespace-nowrap">{fmtDate(inv.dueDate)}</td>
+                      <td className="px-4 py-3 text-gray-500 whitespace-nowrap">{fmtDate(inv.invoiceDate)}</td>
+                      <td className="px-4 py-3 text-gray-500 whitespace-nowrap">{fmtDate(inv.dueDate)}</td>
                       <td className="px-4 py-3"><StatusBadge status={inv.status} /></td>
-                      <td className="px-4 py-3 text-slate-400 text-xs font-semibold">{cur}</td>
-                      <td className="px-4 py-3 text-right font-semibold text-slate-900 whitespace-nowrap">
+                      <td className="px-4 py-3 text-xs">
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-md text-xs font-semibold bg-indigo-50 text-indigo-700">{cur}</span>
+                      </td>
+                      <td className="px-4 py-3 text-right font-bold text-gray-900 whitespace-nowrap">
                         {fmtCurrency(grandTotal, cur)}
                       </td>
-                      <td className="px-4 py-3 text-right text-emerald-700 whitespace-nowrap">
+                      <td className="px-4 py-3 text-right text-emerald-700 font-medium whitespace-nowrap">
                         {fmtCurrency(amtPaid, cur)}
                       </td>
                       <td className="px-4 py-3 text-right whitespace-nowrap">
-                        <span className={balance > 0 ? 'text-rose-600 font-medium' : 'text-slate-400'}>
+                        <span className={balance > 0 ? 'text-rose-600 font-semibold' : 'text-gray-400'}>
                           {fmtCurrency(balance, cur)}
                         </span>
                       </td>
