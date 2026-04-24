@@ -80,16 +80,34 @@ const PAYMENT_TERMS_DAYS = {
   'Due on Receipt': 0,
 };
 
-/** Return YYYY-MM-DD string for (baseDate + days) */
+const toDisplayDate = (d) => {
+  if (!d) return '';
+  const dt = new Date(d);
+  if (isNaN(dt.getTime())) return '';
+  return [
+    String(dt.getDate()).padStart(2, '0'),
+    String(dt.getMonth() + 1).padStart(2, '0'),
+    dt.getFullYear(),
+  ].join('-');
+};
+
+const parseDisplayDate = (s) => {
+  if (!s || !/^\d{2}-\d{2}-\d{4}$/.test(s)) return '';
+  const [dd, mm, yyyy] = s.split('-');
+  return `${yyyy}-${mm}-${dd}`;
+};
+
 const addDays = (dateStr, days) => {
-  const d = new Date(dateStr);
+  const iso = parseDisplayDate(dateStr);
+  if (!iso) return '';
+  const d = new Date(iso);
   d.setDate(d.getDate() + days);
-  return d.toISOString().slice(0, 10);
+  return toDisplayDate(d);
 };
 
 const defaultValues = {
   client:              '',
-  invoiceDate:         new Date().toISOString().slice(0, 10),
+  invoiceDate:         toDisplayDate(new Date()),
   dueDate:             '',
   paymentTerms:        'Net 30',
   customPaymentDays:   0,
@@ -196,7 +214,6 @@ export default function CreateInvoice() {
   });
 
   const onSubmit = (formData) => {
-    // Strip empty-string date fields so backend Joi doesn't choke on ''
     const proj = formData.project || {};
     const cleanedProject = {
       ...proj,
@@ -205,7 +222,13 @@ export default function CreateInvoice() {
       name:      proj.name      || null,
       description: proj.description || null,
     };
-    mutate({ ...formData, project: cleanedProject, customFields });
+    mutate({
+      ...formData,
+      invoiceDate: parseDisplayDate(formData.invoiceDate) || null,
+      dueDate:     parseDisplayDate(formData.dueDate)     || null,
+      project: cleanedProject,
+      customFields,
+    });
   };
 
   return (
@@ -253,8 +276,14 @@ export default function CreateInvoice() {
             </div>
 
             <div>
-              <label className="label">Invoice Date</label>
-              <input {...register('invoiceDate')} type="date" className="input" />
+              <label className="label">Date</label>
+              <input
+                {...register('invoiceDate')}
+                type="text"
+                placeholder="DD-MM-YYYY"
+                maxLength={10}
+                className="input font-mono"
+              />
             </div>
 
             <div>
@@ -268,7 +297,13 @@ export default function CreateInvoice() {
                   return <span className="ml-2 text-xs font-normal text-slate-400">(auto: {label})</span>;
                 })()}
               </label>
-              <input {...register('dueDate')} type="date" className="input" />
+              <input
+                {...register('dueDate')}
+                type="text"
+                placeholder="DD-MM-YYYY"
+                maxLength={10}
+                className="input font-mono"
+              />
               <p className="text-xs text-slate-400 mt-1">Based on client payment terms — you can override this.</p>
             </div>
 

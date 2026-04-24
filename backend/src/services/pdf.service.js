@@ -79,10 +79,14 @@ const safe = (s) => String(s ?? '');
 const fmt = (n, currency = 'INR') =>
   Number(n || 0).toLocaleString(currency === 'INR' ? 'en-IN' : 'en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-const fmtDate = (d) =>
-  d
-    ? new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
-    : '\u2014';
+const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+
+const fmtDate = (d) => {
+  if (!d) return '\u2014';
+  const dt = new Date(d);
+  if (isNaN(dt.getTime())) return '\u2014';
+  return `${dt.getDate()} ${MONTHS[dt.getMonth()]} ${dt.getFullYear()}`;
+};
 
 // PDFKit built-in fonts (Helvetica) support Latin-1; use Rs. for INR, £ for GBP.
 const currSym = (c) =>
@@ -237,7 +241,7 @@ const drawMetaStrip = (doc, invoice, y) => {
   }
 
   const cards = [
-    { label: 'Invoice Date', value: fmtDate(invoice.invoiceDate) },
+    { label: 'Dated',        value: fmtDate(invoice.invoiceDate) },
     { label: 'Due Date',     value: fmtDate(invoice.dueDate), overdue: isOverdue },
     invoice.purchaseOrderNumber ? { label: 'PO Number',  value: safe(invoice.purchaseOrderNumber) } : null,
     termsValue                  ? { label: 'Net Terms',  value: termsValue }                        : null,
@@ -731,7 +735,7 @@ const drawFooter = (doc, invoice, logoBuffer) => {
 
   // Right: invoice # + generated date
   doc.font('Helvetica').fontSize(8).fillColor('#5a7ea0')
-    .text(`${safe(invoice.invoiceNumber)}  |  Generated ${fmtDate(new Date())}`, M, fy + 44,
+    .text(`${safe(invoice.invoiceNumber)}  |  Dated ${fmtDate(invoice.invoiceDate)}`, M, fy + 44,
       { width: CW, align: 'right', lineBreak: false });
 };
 

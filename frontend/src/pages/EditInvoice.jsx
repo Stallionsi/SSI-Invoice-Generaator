@@ -77,10 +77,29 @@ const PAYMENT_TERMS_DAYS = {
   'Due on Receipt': 0,
 };
 
+const toDisplayDate = (d) => {
+  if (!d) return '';
+  const dt = new Date(d);
+  if (isNaN(dt.getTime())) return '';
+  return [
+    String(dt.getDate()).padStart(2, '0'),
+    String(dt.getMonth() + 1).padStart(2, '0'),
+    dt.getFullYear(),
+  ].join('-');
+};
+
+const parseDisplayDate = (s) => {
+  if (!s || !/^\d{2}-\d{2}-\d{4}$/.test(s)) return '';
+  const [dd, mm, yyyy] = s.split('-');
+  return `${yyyy}-${mm}-${dd}`;
+};
+
 const addDays = (dateStr, days) => {
-  const d = new Date(dateStr);
+  const iso = parseDisplayDate(dateStr);
+  if (!iso) return '';
+  const d = new Date(iso);
   d.setDate(d.getDate() + days);
-  return d.toISOString().slice(0, 10);
+  return toDisplayDate(d);
 };
 
 export default function EditInvoice() {
@@ -137,8 +156,8 @@ export default function EditInvoice() {
 
     reset({
       client:              inv.client?._id || inv.client || '',
-      invoiceDate:         inv.invoiceDate?.slice(0, 10) || '',
-      dueDate:             inv.dueDate?.slice(0, 10) || '',
+      invoiceDate:         inv.invoiceDate ? toDisplayDate(new Date(inv.invoiceDate)) : '',
+      dueDate:             inv.dueDate     ? toDisplayDate(new Date(inv.dueDate))     : '',
       purchaseOrderNumber: inv.purchaseOrderNumber || '',
       gstType:             inv.gstType || 'intrastate',
       currency:            inv.currency || 'INR',
@@ -241,7 +260,13 @@ export default function EditInvoice() {
       name:        proj.name        || null,
       description: proj.description || null,
     };
-    mutate({ ...formData, project: cleanedProject, customFields });
+    mutate({
+      ...formData,
+      invoiceDate: parseDisplayDate(formData.invoiceDate) || null,
+      dueDate:     parseDisplayDate(formData.dueDate)     || null,
+      project: cleanedProject,
+      customFields,
+    });
   };
 
   // ── Loading ────────────────────────────────────────────────────────────────
@@ -280,8 +305,14 @@ export default function EditInvoice() {
             </div>
 
             <div>
-              <label className="label">Invoice Date</label>
-              <input {...register('invoiceDate')} type="date" className="input" />
+              <label className="label">Date</label>
+              <input
+                {...register('invoiceDate')}
+                type="text"
+                placeholder="DD-MM-YYYY"
+                maxLength={10}
+                className="input font-mono"
+              />
             </div>
 
             <div>
@@ -295,7 +326,13 @@ export default function EditInvoice() {
                   return <span className="ml-2 text-xs font-normal text-slate-400">(auto: {label})</span>;
                 })()}
               </label>
-              <input {...register('dueDate')} type="date" className="input" />
+              <input
+                {...register('dueDate')}
+                type="text"
+                placeholder="DD-MM-YYYY"
+                maxLength={10}
+                className="input font-mono"
+              />
               <p className="text-xs text-slate-400 mt-1">Based on client payment terms — you can override this.</p>
             </div>
 

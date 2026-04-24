@@ -2,6 +2,15 @@ const Company = require('../models/Company.model');
 const Invoice  = require('../models/Invoice.model');
 const { INVOICE_NUMBER_PREFIX, INVOICE_NUMBER_PADDING } = require('../config/env');
 
+// Indian fiscal year: April–March. Returns e.g. { start: 2026, endShort: '27' }
+const getFiscalYear = () => {
+  const now   = new Date();
+  const year  = now.getFullYear();
+  const month = now.getMonth(); // 0-based; April = 3
+  const start = month >= 3 ? year : year - 1;
+  return { start, endShort: String(start + 1).slice(-2) };
+};
+
 /**
  * Returns the next available invoice number for a specific client.
  *
@@ -18,7 +27,7 @@ const getNextClientInvoiceNumber = async (companyId, clientId) => {
 
   const prefix  = company.invoiceSettings?.prefix || INVOICE_NUMBER_PREFIX || 'INV';
   const padding = parseInt(INVOICE_NUMBER_PADDING || '6', 10);
-  const year    = new Date().getFullYear();
+  const { start: fyStart, endShort: fyEnd } = getFiscalYear();
   const startAt = company.invoiceSettings?.nextNumber || 1;
 
   // Most recent invoice for THIS client only
@@ -43,7 +52,7 @@ const getNextClientInvoiceNumber = async (companyId, clientId) => {
   // Different clients may already hold the same number — we do NOT skip those.
   let candidateStr;
   do {
-    candidateStr = `${prefix}-${year}-${String(candidate).padStart(padding, '0')}`;
+    candidateStr = `${prefix}-${fyStart}-${fyEnd}-${String(candidate).padStart(padding, '0')}`;
     const taken = await Invoice.findOne({
       company:       companyId,
       client:        clientId,
@@ -74,10 +83,10 @@ const previewNextInvoiceNumber = async (companyId) => {
 
   const prefix  = company.invoiceSettings?.prefix || INVOICE_NUMBER_PREFIX || 'INV';
   const padding = parseInt(INVOICE_NUMBER_PADDING || '6', 10);
-  const year    = new Date().getFullYear();
+  const { start: fyStart, endShort: fyEnd } = getFiscalYear();
   const startAt = company.invoiceSettings?.nextNumber || 1;
 
-  return `${prefix}-${year}-${String(startAt).padStart(padding, '0')}`;
+  return `${prefix}-${fyStart}-${fyEnd}-${String(startAt).padStart(padding, '0')}`;
 };
 
 module.exports = { getNextClientInvoiceNumber, previewNextForClient, previewNextInvoiceNumber };
