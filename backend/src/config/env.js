@@ -20,6 +20,8 @@ module.exports = {
   NODE_ENV:   optional('NODE_ENV', 'development'),
   PORT:       parseInt(optional('PORT', '5000'), 10),
   CLIENT_URL: optional('CLIENT_URL', 'http://localhost:3000'),
+  // Single canonical URL used inside email links (reset password, welcome, etc.)
+  APP_URL:    optional('APP_URL', 'http://localhost:3000'),
 
   // MongoDB
   MONGO_URI: optional('MONGO_URI', 'mongodb://localhost:27017/invoice_generator'),

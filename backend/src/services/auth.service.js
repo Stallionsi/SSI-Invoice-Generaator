@@ -2,8 +2,8 @@ const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
 const User = require('../models/User.model');
 const Company = require('../models/Company.model');
-const { JWT_SECRET, JWT_EXPIRES_IN, JWT_REFRESH_SECRET, JWT_REFRESH_EXPIRES_IN, CLIENT_URL } = require('../config/env');
-const { sendPasswordResetEmail } = require('./email.service');
+const { JWT_SECRET, JWT_EXPIRES_IN, JWT_REFRESH_SECRET, JWT_REFRESH_EXPIRES_IN, APP_URL, EMAIL_FROM_NAME } = require('../config/env');
+const { sendPasswordResetEmail, sendWelcomeEmail } = require('./email.service');
 
 // ─── Token Generators ──────────────────────────────────────────────────────
 const generateAccessToken = (userId, role, companyId) => {
@@ -53,6 +53,14 @@ const register = async (data) => {
   // Store hashed refresh token
   user.refreshToken = crypto.createHash('sha256').update(refreshToken).digest('hex');
   await user.save({ validateBeforeSave: false });
+
+  // Send welcome email — fire-and-forget; failure must not break registration
+  sendWelcomeEmail({
+    to:       user.email,
+    name:     user.name,
+    loginUrl: `${APP_URL}/login`,
+    appName:  EMAIL_FROM_NAME,
+  }).catch(() => {});
 
   return { user: user.toSafeObject(), accessToken, refreshToken };
 };
@@ -163,7 +171,7 @@ const forgotPassword = async (email) => {
   user.passwordResetExpires = new Date(Date.now() + 15 * 60 * 1000); // 15 minutes
   await user.save({ validateBeforeSave: false });
 
-  const resetUrl = `${CLIENT_URL}/reset-password?token=${rawToken}`;
+  const resetUrl = `${APP_URL}/reset-password?token=${rawToken}`;
   await sendPasswordResetEmail({ to: user.email, resetUrl, name: user.name });
 };
 

@@ -5,11 +5,12 @@ const EmailLog = require('../models/EmailLog.model');
 const Invoice = require('../models/Invoice.model');
 const Company = require('../models/Company.model');
 const Payment = require('../models/Payment.model');
-const { USE_RESEND, SMTP_HOST, SMTP_PORT, SMTP_SECURE, SMTP_USER, SMTP_PASS, EMAIL_FROM_NAME, EMAIL_FROM_ADDRESS, CLIENT_URL } = require('../config/env');
+const { USE_RESEND, SMTP_HOST, SMTP_PORT, SMTP_SECURE, SMTP_USER, SMTP_PASS, EMAIL_FROM_NAME, EMAIL_FROM_ADDRESS } = require('../config/env');
 const { decrypt } = require('../utils/encryption.util');
 const { sendViaResend } = require('../utils/resend.util');
 const logger = require('../utils/logger');
 const resetPasswordTemplate = require('../templates/emails/resetPassword.template');
+const welcomeTemplate       = require('../templates/emails/welcome.template');
 
 // ─── Transport ─────────────────────────────────────────────────────────────
 const createTransport = (companySmtp = null) => {
@@ -123,7 +124,7 @@ const sendInvoiceEmail = async ({ invoiceId, companyId, recipientEmail, ccEmails
   if (!invoice) throw new Error('Invoice not found');
 
   const emailSubject = subject || `Invoice ${invoice.invoiceNumber} from ${company.companyName}`;
-  const html = ' ';
+  const html = buildInvoiceEmailHtml({ invoice, company, message });
 
   // ── Build PDF attachment from local file ───────────────────────────────
   const attachments = [];
@@ -317,6 +318,14 @@ const buildReceiptEmailHtml = ({ invoice, payment, company }) => `
   <div class="footer"><p>${company.companyName} | ${company.email || ''}</p></div>
 </div></body></html>`;
 
+// ─── Welcome Email ────────────────────────────────────────────────────────
+const sendWelcomeEmail = async ({ to, name, loginUrl, appName }) => {
+  const html    = welcomeTemplate({ name, email: to, loginUrl, appName: appName || EMAIL_FROM_NAME });
+  const subject = `Welcome to ${appName || EMAIL_FROM_NAME}`;
+  await sendEmail({ to, subject, html, type: 'welcome' });
+  logger.info(`Welcome email dispatched to: ${to}`);
+};
+
 // ─── Password Reset Email ──────────────────────────────────────────────────
 /**
  * Sends a password reset link. Uses Resend when USE_RESEND=true,
@@ -337,4 +346,5 @@ module.exports = {
   sendPaymentReminder,
   sendPaymentReceipt,
   sendPasswordResetEmail,
+  sendWelcomeEmail,
 };
