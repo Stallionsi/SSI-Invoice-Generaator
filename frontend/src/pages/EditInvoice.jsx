@@ -169,7 +169,7 @@ export default function EditInvoice() {
         taxRate:     item.taxRate     || 0,
         discount:    item.discount    || { type: 'percentage', value: 0 },
       })) || [],
-      invoiceDiscount: inv.invoiceDiscount,
+      invoiceDiscount: inv.invoiceDiscount || { type: 'percentage', value: 0 },
       project: {
         name:        inv.project?.name        || '',
         description: inv.project?.description || '',

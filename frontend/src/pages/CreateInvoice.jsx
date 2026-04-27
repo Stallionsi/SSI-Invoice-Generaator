@@ -118,6 +118,7 @@ const defaultValues = {
   lineItems: [
     { description: '', quantity: 1, unitPrice: 0, taxRate: 18, discount: { type: 'percentage', value: 0 } },
   ],
+  invoiceDiscount: { type: 'percentage', value: 0 },
   project: { name: '', description: '', started: false, startDate: '', endDate: '' },
 };
 
