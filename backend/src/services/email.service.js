@@ -195,7 +195,7 @@ const sendPaymentReminder = async ({ invoiceId, companyId, reminderType }) => {
   ]);
   if (!invoice || ['paid', 'cancelled'].includes(invoice.status)) return;
 
-  const subject = `Reminder: Invoice ${invoice.invoiceNumber} — Balance Due ₹${invoice.balanceDue}`;
+  const subject = `Reminder: Invoice ${invoice.invoiceNumber} — Balance Due ${fmtMoney(invoice.balanceDue, invoice.currency)}`;
   const html = buildReminderEmailHtml({ invoice, company, reminderType });
 
   await sendEmail({
@@ -232,6 +232,14 @@ const sendPaymentReceipt = async ({ invoiceId, paymentId, companyId }) => {
   });
 };
 
+// ─── Currency formatter ────────────────────────────────────────────────────
+const CURRENCY_SYMBOLS = { INR: '₹', USD: '$', EUR: '€', GBP: '£', AUD: 'A$', SGD: 'S$', AED: 'AED ' };
+const fmtMoney = (amount, currency = 'INR') => {
+  const sym    = CURRENCY_SYMBOLS[currency] || (currency + ' ');
+  const locale = currency === 'INR' ? 'en-IN' : 'en-US';
+  return `${sym}${(amount || 0).toLocaleString(locale, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+};
+
 // ─── Email HTML Builders ───────────────────────────────────────────────────
 const buildInvoiceEmailHtml = ({ invoice, company, message }) => `
 <!DOCTYPE html>
@@ -262,9 +270,9 @@ const buildInvoiceEmailHtml = ({ invoice, company, message }) => `
       <tr><td>Invoice Number</td><td><strong>${invoice.invoiceNumber}</strong></td></tr>
       <tr><td>Invoice Date</td><td>${new Date(invoice.invoiceDate).toLocaleDateString('en-IN')}</td></tr>
       <tr><td>Due Date</td><td>${invoice.dueDate ? new Date(invoice.dueDate).toLocaleDateString('en-IN') : 'On Receipt'}</td></tr>
-      <tr><td>Amount Due</td><td><strong>₹${invoice.grandTotal?.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</strong></td></tr>
+      <tr><td>Amount Due</td><td><strong>${fmtMoney(invoice.grandTotal, invoice.currency)}</strong></td></tr>
     </table>
-    <div class="amount">₹${invoice.balanceDue?.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div>
+    <div class="amount">${fmtMoney(invoice.balanceDue, invoice.currency)}</div>
     <p style="text-align:center;color:#6b7280;font-size:13px">Balance Due</p>
     <p>Please review the attached PDF for complete invoice details.</p>
     ${invoice.notes ? `<p><em>${invoice.notes}</em></p>` : ''}
@@ -302,8 +310,8 @@ const buildReminderEmailHtml = ({ invoice, company, reminderType }) => {
     </p>
     <p><strong>Invoice:</strong> ${invoice.invoiceNumber}<br>
        <strong>Due Date:</strong> ${new Date(invoice.dueDate).toLocaleDateString('en-IN')}<br>
-       <strong>Amount Due:</strong> &#8377;${invoice.balanceDue?.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</p>
-    <div class="amount">&#8377;${invoice.balanceDue?.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div>
+       <strong>Amount Due:</strong> ${fmtMoney(invoice.balanceDue, invoice.currency)}</p>
+    <div class="amount">${fmtMoney(invoice.balanceDue, invoice.currency)}</div>
     <p>Please arrange payment at your earliest convenience. If you have already made the payment, kindly disregard this notice.</p>
   </div>
   <div class="footer">
@@ -330,11 +338,11 @@ const buildReceiptEmailHtml = ({ invoice, payment, company }) => `
     <p>Thank you! We have received your payment.</p>
     <table class="info-table">
       <tr><td>Invoice Number</td><td>${invoice.invoiceNumber}</td></tr>
-      <tr><td>Payment Amount</td><td><strong>₹${payment.paymentAmount?.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</strong></td></tr>
+      <tr><td>Payment Amount</td><td><strong>${fmtMoney(payment.paymentAmount, invoice.currency)}</strong></td></tr>
       <tr><td>Payment Date</td><td>${new Date(payment.paymentDate).toLocaleDateString('en-IN')}</td></tr>
       <tr><td>Payment Method</td><td>${payment.paymentMethod?.replace('_', ' ')?.toUpperCase()}</td></tr>
       ${payment.transactionId ? `<tr><td>Transaction ID</td><td>${payment.transactionId}</td></tr>` : ''}
-      <tr><td>Balance Due</td><td>${invoice.balanceDue <= 0.01 ? '<strong style="color:#059669">FULLY PAID</strong>' : `₹${invoice.balanceDue?.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`}</td></tr>
+      <tr><td>Balance Due</td><td>${invoice.balanceDue <= 0.01 ? '<strong style="color:#059669">FULLY PAID</strong>' : fmtMoney(invoice.balanceDue, invoice.currency)}</td></tr>
     </table>
   </div>
   <div class="footer">
