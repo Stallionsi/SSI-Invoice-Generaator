@@ -1,4 +1,5 @@
 const nodemailer = require('nodemailer');
+const crypto = require('crypto');
 const path = require('path');
 const fs   = require('fs');
 const EmailLog = require('../models/EmailLog.model');
@@ -40,9 +41,22 @@ const createTransport = (companySmtp = null) => {
  * sends EXCEPT those that supply a per-company SMTP override — those always
  * use the company's own SMTP credentials.
  */
-const sendEmail = async ({ to, cc, bcc, subject, html, attachments = [], from, companySmtp, invoiceId, companyId, type, userId }) => {
+// System email types that should carry unsubscribe headers
+const SYSTEM_EMAIL_TYPES = new Set(['other', 'welcome', 'password_reset', 'payment_reminder', 'payment_receipt']);
+
+const sendEmail = async ({ to, cc, bcc, subject, html, attachments = [], from, companySmtp, invoiceId, companyId, type, userId, headers = {} }) => {
   const fromAddr   = from || `"${EMAIL_FROM_NAME}" <${EMAIL_FROM_ADDRESS}>`;
   const toArray    = Array.isArray(to) ? to : [to];
+
+  // Build merged headers: caller-supplied + auto-added deliverability headers
+  const autoHeaders = {
+    'X-Entity-Ref-ID': crypto.randomUUID(), // unique per send — prevents Gmail threading/spam collapse
+  };
+  if (!companySmtp?.host && SYSTEM_EMAIL_TYPES.has(type)) {
+    autoHeaders['List-Unsubscribe']      = `<mailto:${EMAIL_FROM_ADDRESS}?subject=unsubscribe>`;
+    autoHeaders['List-Unsubscribe-Post'] = 'List-Unsubscribe=One-Click';
+  }
+  const mergedHeaders = { ...autoHeaders, ...headers };
 
   // Determine provider label for logging
   const provider = companySmtp?.host ? 'smtp' : USE_RESEND ? 'resend' : 'smtp';
@@ -77,10 +91,11 @@ const sendEmail = async ({ to, cc, bcc, subject, html, attachments = [], from, c
         subject,
         html,
         attachments,
+        headers: mergedHeaders,
       });
       providerId = info.messageId;
     } else if (USE_RESEND) {
-      const result = await sendViaResend({ to: toArray, from: fromAddr, subject, html, cc, bcc, attachments });
+      const result = await sendViaResend({ to: toArray, from: fromAddr, subject, html, cc, bcc, attachments, headers: mergedHeaders });
       providerId = result.id;
     } else {
       const transport = createTransport();
@@ -92,6 +107,7 @@ const sendEmail = async ({ to, cc, bcc, subject, html, attachments = [], from, c
         subject,
         html,
         attachments,
+        headers: mergedHeaders,
       });
       providerId = info.messageId;
     }
@@ -261,20 +277,22 @@ const buildInvoiceEmailHtml = ({ invoice, company, message }) => `
 </body></html>`;
 
 const buildReminderEmailHtml = ({ invoice, company, reminderType }) => {
-  const isOverdue = ['after_due_3days', 'after_due_7days', 'after_due_14days', 'after_due_30days'].includes(reminderType);
+  const isOverdue   = ['after_due_3days', 'after_due_7days', 'after_due_14days', 'after_due_30days'].includes(reminderType);
+  const headerColor = isOverdue ? '#92400e' : '#b45309'; // dark amber — professional, not alarm-red
+  const amountColor = isOverdue ? '#92400e' : '#b45309';
   return `
 <!DOCTYPE html><html><head><meta charset="utf-8"><style>
   body { font-family: Arial, sans-serif; color: #333; background: #f4f4f4; }
   .container { max-width: 600px; margin: 30px auto; background: #fff; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
-  .header { background: ${isOverdue ? '#dc2626' : '#f59e0b'}; color: #fff; padding: 30px; text-align: center; }
+  .header { background: ${headerColor}; color: #fff; padding: 30px; text-align: center; }
   .body { padding: 30px; }
-  .amount { font-size: 32px; font-weight: 700; color: ${isOverdue ? '#dc2626' : '#f59e0b'}; text-align: center; margin: 20px 0; }
-  .footer { background: #f9fafb; padding: 20px; text-align: center; font-size: 12px; color: #6b7280; }
+  .amount { font-size: 32px; font-weight: 700; color: ${amountColor}; text-align: center; margin: 20px 0; }
+  .footer { background: #f9fafb; border-top: 1px solid #e5e7eb; padding: 20px; text-align: center; font-size: 12px; color: #6b7280; line-height: 1.8; }
 </style></head>
 <body><div class="container">
   <div class="header">
-    <h1>${isOverdue ? '⚠️ Overdue Invoice' : '🔔 Payment Reminder'}</h1>
-    <p style="opacity:0.9">${company.companyName}</p>
+    <h1>${isOverdue ? 'Overdue Invoice' : 'Payment Reminder'}</h1>
+    <p style="opacity:0.9;margin-top:6px">${company.companyName}</p>
   </div>
   <div class="body">
     <p>Dear ${invoice.recipientDetails?.name || 'Valued Client'},</p>
@@ -284,11 +302,14 @@ const buildReminderEmailHtml = ({ invoice, company, reminderType }) => {
     </p>
     <p><strong>Invoice:</strong> ${invoice.invoiceNumber}<br>
        <strong>Due Date:</strong> ${new Date(invoice.dueDate).toLocaleDateString('en-IN')}<br>
-       <strong>Amount Due:</strong> ₹${invoice.balanceDue?.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</p>
-    <div class="amount">₹${invoice.balanceDue?.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div>
-    <p>Please make the payment at your earliest convenience.</p>
+       <strong>Amount Due:</strong> &#8377;${invoice.balanceDue?.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</p>
+    <div class="amount">&#8377;${invoice.balanceDue?.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div>
+    <p>Please arrange payment at your earliest convenience. If you have already made the payment, kindly disregard this notice.</p>
   </div>
-  <div class="footer"><p>${company.companyName} | ${company.email || ''}</p></div>
+  <div class="footer">
+    <p>${company.companyName}${company.email ? ' &bull; ' + company.email : ''}</p>
+    <p>This is an automated reminder. Please do not reply to this email.</p>
+  </div>
 </div></body></html>`;
 };
 
@@ -304,7 +325,7 @@ const buildReceiptEmailHtml = ({ invoice, payment, company }) => `
   .footer { background: #f9fafb; padding: 20px; text-align: center; font-size: 12px; color: #6b7280; }
 </style></head>
 <body><div class="container">
-  <div class="header"><h1>✅ Payment Received</h1><p style="opacity:0.9">${company.companyName}</p></div>
+  <div class="header"><h1>Payment Received</h1><p style="opacity:0.9">${company.companyName}</p></div>
   <div class="body">
     <p>Thank you! We have received your payment.</p>
     <table class="info-table">
@@ -316,7 +337,10 @@ const buildReceiptEmailHtml = ({ invoice, payment, company }) => `
       <tr><td>Balance Due</td><td>${invoice.balanceDue <= 0.01 ? '<strong style="color:#059669">FULLY PAID</strong>' : `₹${invoice.balanceDue?.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`}</td></tr>
     </table>
   </div>
-  <div class="footer"><p>${company.companyName} | ${company.email || ''}</p></div>
+  <div class="footer">
+    <p>${company.companyName}${company.email ? ' &bull; ' + company.email : ''}</p>
+    <p>This is an automated payment confirmation. Please do not reply to this email.</p>
+  </div>
 </div></body></html>`;
 
 // ─── Verification Email ───────────────────────────────────────────────────

@@ -77,7 +77,6 @@ const verifyEmailTemplate = ({ name, verifyUrl, appName = 'Invoice Generator' })
   <div class="wrapper">
     <div class="card">
       <div class="header">
-        <span class="header-icon">✉️</span>
         <div class="header-logo">${appName}</div>
       </div>
       <div class="body">
@@ -87,7 +86,7 @@ const verifyEmailTemplate = ({ name, verifyUrl, appName = 'Invoice Generator' })
           the button below. This keeps your account secure.
         </p>
         <div class="expiry-box">
-          ⏰ <strong>This link expires in 24 hours.</strong>
+          <strong>This link expires in 24 hours.</strong>
           If it expires, simply register again.
         </div>
         <div class="cta-wrapper">

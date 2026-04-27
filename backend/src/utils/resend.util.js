@@ -37,7 +37,7 @@ const getClient = () => {
  *   The Buffer is base64-encoded internally before being sent to Resend.
  * @returns {Promise<{ id: string }>}  Resend message ID
  */
-const sendViaResend = async ({ to, from, subject, html, cc, bcc, replyTo, attachments = [] }) => {
+const sendViaResend = async ({ to, from, subject, html, cc, bcc, replyTo, attachments = [], headers = {} }) => {
   const client = getClient();
 
   // Resend expects: { filename, content: base64string, contentType?, encoding? }
@@ -56,7 +56,8 @@ const sendViaResend = async ({ to, from, subject, html, cc, bcc, replyTo, attach
     ...(cc                       && { cc:          Array.isArray(cc)  ? cc  : [cc]  }),
     ...(bcc                      && { bcc:         Array.isArray(bcc) ? bcc : [bcc] }),
     ...(replyTo                  && { reply_to:    replyTo }),
-    ...(resendAttachments.length && { attachments: resendAttachments }),
+    ...(resendAttachments.length      && { attachments: resendAttachments }),
+    ...(Object.keys(headers).length   && { headers }),
   });
 
   if (error) {

@@ -124,13 +124,13 @@ const welcomeTemplate = ({ name, email, loginUrl, appName = 'Invoice Generator' 
 
       <!-- Header -->
       <div class="header">
-        <div class="header-logo">📄 ${appName}</div>
+        <div class="header-logo">${appName}</div>
         <div class="header-tagline">Professional Invoicing Made Simple</div>
       </div>
 
       <!-- Body -->
       <div class="body">
-        <p class="greeting">Welcome aboard, ${name}! 🎉</p>
+        <p class="greeting">Welcome, ${name}</p>
 
         <p class="text">
           Your account has been created successfully. You're now part of
@@ -141,22 +141,18 @@ const welcomeTemplate = ({ name, email, loginUrl, appName = 'Invoice Generator' 
         <!-- Feature highlights -->
         <div class="feature-grid">
           <div class="feature-item">
-            <div class="feature-icon">📋</div>
             <div class="feature-title">Smart Invoices</div>
             <div class="feature-desc">GST-compliant with auto-numbering</div>
           </div>
           <div class="feature-item">
-            <div class="feature-icon">👥</div>
             <div class="feature-title">Client Management</div>
             <div class="feature-desc">Store and organize all your clients</div>
           </div>
           <div class="feature-item">
-            <div class="feature-icon">💳</div>
             <div class="feature-title">Payment Tracking</div>
             <div class="feature-desc">Record and monitor every payment</div>
           </div>
           <div class="feature-item">
-            <div class="feature-icon">📊</div>
             <div class="feature-title">Reports</div>
             <div class="feature-desc">Revenue, aging, and GST reports</div>
           </div>

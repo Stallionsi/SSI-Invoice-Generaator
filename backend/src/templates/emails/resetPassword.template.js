@@ -118,7 +118,6 @@ const resetPasswordTemplate = ({ resetUrl, name, appName = 'Invoice Generator', 
 
       <!-- Header -->
       <div class="header">
-        <span class="header-icon">🔐</span>
         <div class="header-logo">${appName}</div>
       </div>
 
@@ -133,7 +132,7 @@ const resetPasswordTemplate = ({ resetUrl, name, appName = 'Invoice Generator', 
 
         <!-- Expiry warning -->
         <div class="expiry-box">
-          ⏰ <strong>This link expires in ${expiresIn} minutes.</strong>
+          <strong>This link expires in ${expiresIn} minutes.</strong>
           If it expires, you can request a new one from the login page.
         </div>
 
