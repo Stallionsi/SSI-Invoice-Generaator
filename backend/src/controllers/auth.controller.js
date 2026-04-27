@@ -69,4 +69,9 @@ const resetPassword = asyncHandler(async (req, res) => {
   success(res, {}, 'Password has been reset successfully');
 });
 
-module.exports = { register, login, refreshToken, logout, me, changePassword, forgotPassword, resetPassword };
+const verifyEmail = asyncHandler(async (req, res) => {
+  await authService.verifyEmail(req.query.token);
+  success(res, {}, 'Email verified successfully. You can now sign in.');
+});
+
+module.exports = { register, login, refreshToken, logout, me, changePassword, forgotPassword, resetPassword, verifyEmail };

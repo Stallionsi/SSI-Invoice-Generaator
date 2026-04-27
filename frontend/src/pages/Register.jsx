@@ -1,14 +1,12 @@
 import { useState, useEffect, useRef } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { useMutation } from '@tanstack/react-query';
-import toast from 'react-hot-toast';
-import { Zap, User, Mail, Lock, Building2, AlertCircle, ArrowRight } from 'lucide-react';
+import { Zap, User, Mail, Lock, Building2, AlertCircle, ArrowRight, CheckCircle } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { register as registerApi } from '../api/auth.api';
-import { useAuthStore } from '../store/authStore';
 import Spinner from '../components/ui/Spinner';
 
 const schema = z.object({
@@ -94,8 +92,8 @@ function PremiumInput({ innerRef, focusStyle = inputStyle.focus, ...props }) {
 }
 
 export default function Register() {
-  const navigate = useNavigate();
-  const setUser  = useAuthStore((s) => s.setUser);
+  const [registered, setRegistered]   = useState(false);
+  const [registeredEmail, setRegisteredEmail] = useState('');
   const [apiError, setApiError] = useState('');
   const containerRef = useRef(null);
 
@@ -117,16 +115,67 @@ export default function Register() {
 
   const { mutate, isPending } = useMutation({
     mutationFn: registerApi,
-    onSuccess: (res) => {
-      setUser(res.data.data.user);
-      toast.success('Account created! Welcome.');
-      navigate('/');
+    onSuccess: (_, variables) => {
+      setRegisteredEmail(variables.email || '');
+      setRegistered(true);
     },
     onError: (err) => {
       const msg = err.response?.data?.message || 'Registration failed';
       setApiError(msg);
     },
   });
+
+  if (registered) {
+    return (
+      <div
+        className="min-h-screen flex items-center justify-center px-4"
+        style={{ background: 'radial-gradient(ellipse at 40% 80%, #1E1B4B 0%, #0D0B1F 50%, #000000 100%)' }}
+      >
+        <motion.div
+          className="w-full max-w-md text-center"
+          initial={{ opacity: 0, y: 30 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.5 }}
+        >
+          <div
+            className="rounded-3xl p-10"
+            style={{
+              background: 'rgba(255,255,255,0.04)',
+              backdropFilter: 'blur(24px)',
+              border: '1px solid rgba(255,255,255,0.09)',
+              boxShadow: '0 32px 80px rgba(0,0,0,0.55)',
+            }}
+          >
+            <div className="flex justify-center mb-5">
+              <div
+                className="w-16 h-16 rounded-full flex items-center justify-center"
+                style={{ background: 'linear-gradient(135deg, #059669, #10b981)' }}
+              >
+                <CheckCircle className="w-8 h-8 text-white" />
+              </div>
+            </div>
+            <h2 className="text-2xl font-bold text-white mb-3">Check your email</h2>
+            <p className="text-sm mb-2" style={{ color: '#9ca3af' }}>
+              We sent a verification link to
+            </p>
+            <p className="font-semibold mb-5" style={{ color: '#a5b4fc' }}>
+              {registeredEmail}
+            </p>
+            <p className="text-sm mb-8" style={{ color: '#6b7280' }}>
+              Click the link in the email to activate your account. The link expires in 24 hours.
+            </p>
+            <Link
+              to="/login"
+              className="inline-block w-full py-3 rounded-xl text-sm font-bold text-white text-center"
+              style={{ background: 'linear-gradient(135deg, #7C3AED 0%, #6366F1 100%)' }}
+            >
+              Go to Sign In →
+            </Link>
+          </div>
+        </motion.div>
+      </div>
+    );
+  }
 
   return (
     <div

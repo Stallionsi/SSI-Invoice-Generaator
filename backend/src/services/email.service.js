@@ -9,8 +9,9 @@ const { USE_RESEND, SMTP_HOST, SMTP_PORT, SMTP_SECURE, SMTP_USER, SMTP_PASS, EMA
 const { decrypt } = require('../utils/encryption.util');
 const { sendViaResend } = require('../utils/resend.util');
 const logger = require('../utils/logger');
-const resetPasswordTemplate = require('../templates/emails/resetPassword.template');
-const welcomeTemplate       = require('../templates/emails/welcome.template');
+const resetPasswordTemplate  = require('../templates/emails/resetPassword.template');
+const welcomeTemplate        = require('../templates/emails/welcome.template');
+const verifyEmailTemplate    = require('../templates/emails/verifyEmail.template');
 
 // ─── Transport ─────────────────────────────────────────────────────────────
 const createTransport = (companySmtp = null) => {
@@ -318,6 +319,14 @@ const buildReceiptEmailHtml = ({ invoice, payment, company }) => `
   <div class="footer"><p>${company.companyName} | ${company.email || ''}</p></div>
 </div></body></html>`;
 
+// ─── Verification Email ───────────────────────────────────────────────────
+const sendVerificationEmail = async ({ to, name, verifyUrl, appName }) => {
+  const html    = verifyEmailTemplate({ name, verifyUrl, appName: appName || EMAIL_FROM_NAME });
+  const subject = `Verify your email — ${appName || EMAIL_FROM_NAME}`;
+  await sendEmail({ to, subject, html, type: 'other' });
+  logger.info(`Verification email dispatched to: ${to}`);
+};
+
 // ─── Welcome Email ────────────────────────────────────────────────────────
 const sendWelcomeEmail = async ({ to, name, loginUrl, appName }) => {
   const html    = welcomeTemplate({ name, email: to, loginUrl, appName: appName || EMAIL_FROM_NAME });
@@ -347,4 +356,5 @@ module.exports = {
   sendPaymentReceipt,
   sendPasswordResetEmail,
   sendWelcomeEmail,
+  sendVerificationEmail,
 };

@@ -3,7 +3,7 @@ const crypto = require('crypto');
 const User = require('../models/User.model');
 const Company = require('../models/Company.model');
 const { JWT_SECRET, JWT_EXPIRES_IN, JWT_REFRESH_SECRET, JWT_REFRESH_EXPIRES_IN, APP_URL, EMAIL_FROM_NAME } = require('../config/env');
-const { sendPasswordResetEmail, sendWelcomeEmail } = require('./email.service');
+const { sendPasswordResetEmail, sendWelcomeEmail, sendVerificationEmail } = require('./email.service');
 
 // ─── Token Generators ──────────────────────────────────────────────────────
 const generateAccessToken = (userId, role, companyId) => {
@@ -34,35 +34,36 @@ const register = async (data) => {
   // Create company first
   const company = await Company.create({ companyName });
 
-  // Create user as admin of the new company
+  // Generate email verification token
+  const rawToken    = crypto.randomBytes(32).toString('hex');
+  const hashedToken = crypto.createHash('sha256').update(rawToken).digest('hex');
+
+  // Create user — not yet verified
   const user = await User.create({
     name,
     email,
     password,
-    companies: [company._id],
-    role: 'admin',
+    companies:                [company._id],
+    role:                     'admin',
+    isEmailVerified:          false,
+    emailVerificationToken:   hashedToken,
+    emailVerificationExpires: new Date(Date.now() + 24 * 60 * 60 * 1000), // 24 hours
   });
 
   // Set company owner
   company.owner = user._id;
   await company.save();
 
-  const accessToken  = generateAccessToken(user._id, user.role, user.companies?.[0]);
-  const refreshToken = generateRefreshToken(user._id);
-
-  // Store hashed refresh token
-  user.refreshToken = crypto.createHash('sha256').update(refreshToken).digest('hex');
-  await user.save({ validateBeforeSave: false });
-
-  // Send welcome email — fire-and-forget; failure must not break registration
-  sendWelcomeEmail({
-    to:       user.email,
-    name:     user.name,
-    loginUrl: `${APP_URL}/login`,
-    appName:  EMAIL_FROM_NAME,
+  // Send verification email — fire-and-forget
+  const verifyUrl = `${APP_URL}/verify-email?token=${rawToken}`;
+  sendVerificationEmail({
+    to:      user.email,
+    name:    user.name,
+    verifyUrl,
+    appName: EMAIL_FROM_NAME,
   }).catch(() => {});
 
-  return { user: user.toSafeObject(), accessToken, refreshToken };
+  return { message: 'Account created! Please check your email and click the verification link to activate your account.' };
 };
 
 const MAX_FAILED_ATTEMPTS = 5;
@@ -73,6 +74,13 @@ const login = async (email, password) => {
   if (!user || !user.isActive) {
     const err = new Error('Invalid credentials');
     err.statusCode = 401;
+    throw err;
+  }
+
+  // Reject unverified accounts (strict false check — legacy users without the field pass through)
+  if (user.isEmailVerified === false) {
+    const err = new Error('Please verify your email before signing in. Check your inbox for the verification link.');
+    err.statusCode = 403;
     throw err;
   }
 
@@ -195,4 +203,32 @@ const resetPassword = async (rawToken, newPassword) => {
   await user.save();
 };
 
-module.exports = { register, login, refreshAccessToken, logout, changePassword, getMe, forgotPassword, resetPassword };
+const verifyEmail = async (rawToken) => {
+  const hashedToken = crypto.createHash('sha256').update(rawToken).digest('hex');
+
+  const user = await User.findOne({
+    emailVerificationToken:   hashedToken,
+    emailVerificationExpires: { $gt: Date.now() },
+  }).select('+emailVerificationToken +emailVerificationExpires');
+
+  if (!user) {
+    const err = new Error('Verification link is invalid or has expired. Please register again.');
+    err.statusCode = 400;
+    throw err;
+  }
+
+  user.isEmailVerified          = true;
+  user.emailVerificationToken   = undefined;
+  user.emailVerificationExpires = undefined;
+  await user.save({ validateBeforeSave: false });
+
+  // Send welcome email now that the account is confirmed
+  sendWelcomeEmail({
+    to:      user.email,
+    name:    user.name,
+    loginUrl: `${APP_URL}/login`,
+    appName:  EMAIL_FROM_NAME,
+  }).catch(() => {});
+};
+
+module.exports = { register, login, refreshAccessToken, logout, changePassword, getMe, forgotPassword, resetPassword, verifyEmail };

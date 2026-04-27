@@ -9,6 +9,9 @@ router.post('/register', validate(v.register),      ctrl.register);
 router.post('/login',    validate(v.login),          ctrl.login);
 router.post('/refresh',  validate(v.refreshToken),   ctrl.refreshToken);
 
+// Email verification (public)
+router.get('/verify-email', ctrl.verifyEmail);
+
 // Password Reset (public)
 router.post('/forgot-password', validate(v.forgotPassword), ctrl.forgotPassword);
 router.post('/reset-password',  validate(v.resetPassword),  ctrl.resetPassword);
