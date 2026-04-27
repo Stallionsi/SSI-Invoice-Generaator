@@ -36,7 +36,7 @@ export default function App() {
       <Route path="/login"           element={<GuestRoute><Login /></GuestRoute>} />
       <Route path="/register"        element={<GuestRoute><Register /></GuestRoute>} />
       <Route path="/forgot-password" element={<GuestRoute><ForgotPassword /></GuestRoute>} />
-      <Route path="/reset-password"  element={<GuestRoute><ResetPassword /></GuestRoute>} />
+      <Route path="/reset-password"  element={<ResetPassword />} />
 
       <Route element={<ProtectedRoute><AppLayout /></ProtectedRoute>}>
         <Route index element={<Dashboard />} />
