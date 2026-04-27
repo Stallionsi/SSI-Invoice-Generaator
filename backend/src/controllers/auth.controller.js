@@ -74,4 +74,9 @@ const verifyEmail = asyncHandler(async (req, res) => {
   success(res, {}, 'Email verified successfully. You can now sign in.');
 });
 
-module.exports = { register, login, refreshToken, logout, me, changePassword, forgotPassword, resetPassword, verifyEmail };
+const resendVerification = asyncHandler(async (req, res) => {
+  await authService.resendVerification(req.body.email);
+  success(res, {}, 'If your email is registered and unverified, a new link has been sent.');
+});
+
+module.exports = { register, login, refreshToken, logout, me, changePassword, forgotPassword, resetPassword, verifyEmail, resendVerification };

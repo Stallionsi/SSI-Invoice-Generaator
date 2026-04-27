@@ -231,4 +231,20 @@ const verifyEmail = async (rawToken) => {
   }).catch(() => {});
 };
 
-module.exports = { register, login, refreshAccessToken, logout, changePassword, getMe, forgotPassword, resetPassword, verifyEmail };
+const resendVerification = async (email) => {
+  const user = await User.findOne({ email }).select('+emailVerificationToken +emailVerificationExpires');
+  // Silently return if email not found or already verified — prevents enumeration
+  if (!user || user.isEmailVerified !== false) return;
+
+  const rawToken    = crypto.randomBytes(32).toString('hex');
+  const hashedToken = crypto.createHash('sha256').update(rawToken).digest('hex');
+
+  user.emailVerificationToken   = hashedToken;
+  user.emailVerificationExpires = new Date(Date.now() + 24 * 60 * 60 * 1000);
+  await user.save({ validateBeforeSave: false });
+
+  const verifyUrl = `${APP_URL}/verify-email?token=${rawToken}`;
+  await sendVerificationEmail({ to: user.email, name: user.name, verifyUrl, appName: EMAIL_FROM_NAME });
+};
+
+module.exports = { register, login, refreshAccessToken, logout, changePassword, getMe, forgotPassword, resetPassword, verifyEmail, resendVerification };

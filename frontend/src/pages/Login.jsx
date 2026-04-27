@@ -7,7 +7,7 @@ import { useMutation } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
 import { Zap, Mail, Lock, AlertCircle, ArrowRight } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { login } from '../api/auth.api';
+import { login, resendVerification } from '../api/auth.api';
 import { useAuthStore } from '../store/authStore';
 import Spinner from '../components/ui/Spinner';
 
@@ -65,7 +65,11 @@ function Field({ label, icon: Icon, error, children }) {
 export default function Login() {
   const navigate  = useNavigate();
   const setUser   = useAuthStore((s) => s.setUser);
-  const [apiError, setApiError] = useState('');
+  const [apiError, setApiError]         = useState('');
+  const [showResend, setShowResend]     = useState(false);
+  const [resendEmail, setResendEmail]   = useState('');
+  const [resendSent, setResendSent]     = useState(false);
+  const [resendLoading, setResendLoading] = useState(false);
   const containerRef = useRef(null);
 
   /* Subtle parallax on mouse move */
@@ -96,6 +100,9 @@ export default function Login() {
     onError: (err) => {
       const msg = err.response?.data?.message || 'Login failed';
       setApiError(msg);
+      if (err.response?.status === 403 && msg.toLowerCase().includes('verify')) {
+        setShowResend(true);
+      }
     },
   });
 
@@ -182,7 +189,7 @@ export default function Login() {
 
           {/* Form */}
           <form
-            onSubmit={handleSubmit((d) => { setApiError(''); mutate(d); })}
+            onSubmit={handleSubmit((d) => { setApiError(''); setShowResend(false); setResendSent(false); setResendEmail(d.email); mutate(d); })}
             className="space-y-5"
           >
             <Field label="Email address" icon={Mail} error={errors.email?.message}>
@@ -257,14 +264,46 @@ export default function Login() {
                   animate={{ opacity: 1, y: 0, scale: 1 }}
                   exit={{ opacity: 0, y: -6, scale: 0.98 }}
                   transition={{ duration: 0.2 }}
-                  className="flex items-start gap-2.5 rounded-xl px-4 py-3"
+                  className="rounded-xl px-4 py-3 space-y-2"
                   style={{
                     background: 'rgba(239,68,68,0.10)',
                     border: '1px solid rgba(239,68,68,0.25)',
                   }}
                 >
-                  <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" style={{ color: '#F87171' }} />
-                  <p className="text-sm" style={{ color: '#FCA5A5' }}>{apiError}</p>
+                  <div className="flex items-start gap-2.5">
+                    <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" style={{ color: '#F87171' }} />
+                    <p className="text-sm" style={{ color: '#FCA5A5' }}>{apiError}</p>
+                  </div>
+                  {showResend && (
+                    <div className="pl-6">
+                      {resendSent ? (
+                        <p className="text-xs font-medium" style={{ color: '#86efac' }}>
+                          Verification link sent! Check your inbox.
+                        </p>
+                      ) : (
+                        <button
+                          type="button"
+                          disabled={resendLoading}
+                          onClick={async () => {
+                            setResendLoading(true);
+                            try {
+                              await resendVerification(resendEmail);
+                              setResendSent(true);
+                            } catch {
+                              // fail silently — backend always returns success
+                              setResendSent(true);
+                            } finally {
+                              setResendLoading(false);
+                            }
+                          }}
+                          className="text-xs font-semibold underline underline-offset-2"
+                          style={{ color: '#A5B4FC' }}
+                        >
+                          {resendLoading ? 'Sending…' : 'Resend verification email →'}
+                        </button>
+                      )}
+                    </div>
+                  )}
                 </motion.div>
               )}
             </AnimatePresence>

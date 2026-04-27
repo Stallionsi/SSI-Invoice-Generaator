@@ -10,7 +10,8 @@ router.post('/login',    validate(v.login),          ctrl.login);
 router.post('/refresh',  validate(v.refreshToken),   ctrl.refreshToken);
 
 // Email verification (public)
-router.get('/verify-email', ctrl.verifyEmail);
+router.get('/verify-email',           ctrl.verifyEmail);
+router.post('/resend-verification',   ctrl.resendVerification);
 
 // Password Reset (public)
 router.post('/forgot-password', validate(v.forgotPassword), ctrl.forgotPassword);

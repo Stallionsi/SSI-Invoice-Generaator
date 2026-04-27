@@ -8,3 +8,4 @@ export const forgotPassword = (email) => api.post('/auth/forgot-password', { ema
 export const resetPassword = (data) => api.post('/auth/reset-password', data);
 export const getMe = () => api.get('/auth/me');
 export const changePassword = (data) => api.patch('/auth/change-password', data);
+export const resendVerification = (email) => api.post('/auth/resend-verification', { email });
