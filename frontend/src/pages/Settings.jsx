@@ -1,30 +1,11 @@
-import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
-import { Eye, EyeOff } from 'lucide-react';
 import { getCompany, createCompany, updateCompany, updateInvoiceSettings } from '../api/company.api';
-import { changePassword } from '../api/auth.api';
 import PageHeader from '../components/ui/PageHeader';
 import Spinner from '../components/ui/Spinner';
-
-const passwordSchema = z
-  .object({
-    currentPassword: z.string().min(1, 'Current password is required'),
-    newPassword: z
-      .string()
-      .min(8, 'At least 8 characters')
-      .regex(/[A-Z]/, 'Must contain an uppercase letter')
-      .regex(/[a-z]/, 'Must contain a lowercase letter')
-      .regex(/[0-9]/, 'Must contain a number'),
-    confirmPassword: z.string().min(1, 'Please confirm your new password'),
-  })
-  .refine((d) => d.newPassword === d.confirmPassword, {
-    message: "Passwords don't match",
-    path: ['confirmPassword'],
-  });
 
 const bankSchema = z.object({
   bankName:      z.string().optional(),
@@ -64,10 +45,6 @@ const invSchema = z.object({
 
 export default function Settings() {
   const qc = useQueryClient();
-  const [showCurrent, setShowCurrent] = useState(false);
-  const [showNew, setShowNew] = useState(false);
-  const [showConfirm, setShowConfirm] = useState(false);
-  const [pwApiError, setPwApiError] = useState('');
 
   const { data, isLoading } = useQuery({
     queryKey: ['company'],
@@ -102,20 +79,6 @@ export default function Settings() {
       qc.invalidateQueries({ queryKey: ['company'] });
     },
     onError: (e) => toast.error(e.response?.data?.message || 'Failed to save'),
-  });
-
-  const pwForm = useForm({ resolver: zodResolver(passwordSchema) });
-
-  const { mutate: doChangePassword, isPending: changingPw } = useMutation({
-    mutationFn: changePassword,
-    onSuccess: () => {
-      toast.success('Password changed successfully!');
-      pwForm.reset();
-      setPwApiError('');
-    },
-    onError: (e) => {
-      setPwApiError(e.response?.data?.message || 'Failed to change password');
-    },
   });
 
   if (isLoading) return <div className="flex justify-center py-12"><Spinner /></div>;
@@ -213,100 +176,6 @@ export default function Settings() {
             <div className="flex justify-end">
               <button type="submit" className="btn-primary" disabled={savingCompany}>
                 {savingCompany ? <Spinner /> : 'Save Company'}
-              </button>
-            </div>
-          </form>
-        </div>
-
-        {/* Change Password */}
-        <div className="card">
-          <h2 className="text-base font-semibold text-gray-800 mb-4">Change Password</h2>
-          <form
-            onSubmit={pwForm.handleSubmit((d) => { setPwApiError(''); doChangePassword(d); })}
-            className="space-y-4"
-          >
-            {/* Current password */}
-            <div>
-              <label className="label">Current Password</label>
-              <div className="relative">
-                <input
-                  {...pwForm.register('currentPassword')}
-                  type={showCurrent ? 'text' : 'password'}
-                  placeholder="••••••••"
-                  className="input pr-10"
-                  autoComplete="current-password"
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowCurrent((v) => !v)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
-                >
-                  {showCurrent ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                </button>
-              </div>
-              {pwForm.formState.errors.currentPassword && (
-                <p className="text-red-500 text-xs mt-1">{pwForm.formState.errors.currentPassword.message}</p>
-              )}
-            </div>
-
-            {/* New password */}
-            <div>
-              <label className="label">New Password</label>
-              <div className="relative">
-                <input
-                  {...pwForm.register('newPassword')}
-                  type={showNew ? 'text' : 'password'}
-                  placeholder="••••••••"
-                  className="input pr-10"
-                  autoComplete="new-password"
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowNew((v) => !v)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
-                >
-                  {showNew ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                </button>
-              </div>
-              {pwForm.formState.errors.newPassword && (
-                <p className="text-red-500 text-xs mt-1">{pwForm.formState.errors.newPassword.message}</p>
-              )}
-              <p className="text-xs text-gray-400 mt-1">Min 8 chars, uppercase, lowercase, and a number.</p>
-            </div>
-
-            {/* Confirm new password */}
-            <div>
-              <label className="label">Confirm New Password</label>
-              <div className="relative">
-                <input
-                  {...pwForm.register('confirmPassword')}
-                  type={showConfirm ? 'text' : 'password'}
-                  placeholder="••••••••"
-                  className="input pr-10"
-                  autoComplete="new-password"
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowConfirm((v) => !v)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
-                >
-                  {showConfirm ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                </button>
-              </div>
-              {pwForm.formState.errors.confirmPassword && (
-                <p className="text-red-500 text-xs mt-1">{pwForm.formState.errors.confirmPassword.message}</p>
-              )}
-            </div>
-
-            {pwApiError && (
-              <div className="bg-red-50 border border-red-200 rounded-lg p-3">
-                <p className="text-red-700 text-sm">{pwApiError}</p>
-              </div>
-            )}
-
-            <div className="flex justify-end">
-              <button type="submit" className="btn-primary" disabled={changingPw}>
-                {changingPw ? <Spinner /> : 'Change Password'}
               </button>
             </div>
           </form>
