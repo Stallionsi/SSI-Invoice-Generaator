@@ -54,7 +54,7 @@ export default function InvoiceDetails() {
 
   const hasPayment = (inv.amountPaid || 0) > 0;
   const canPay    = !['paid', 'cancelled'].includes(inv.status);
-  const canSend   = hasPayment && inv.status !== 'cancelled';
+  const canSend   = inv.status !== 'cancelled';
   const canDelete = inv.status !== 'paid';
   const canEdit   = !['paid', 'cancelled'].includes(inv.status);
   const clientName = inv.client?.clientName || inv.recipientDetails?.name || '—';
@@ -94,7 +94,7 @@ export default function InvoiceDetails() {
                   className="flex items-center gap-1.5 h-8 px-3 rounded-xl text-xs font-semibold bg-white/20 hover:bg-white/30 text-white border border-white/20 transition-all disabled:opacity-40"
                   onClick={() => canSend && setShowSend(true)}
                   disabled={!canSend}
-                  title={!canSend ? 'Record payment first to enable sending' : 'Send invoice email'}
+                  title="Send invoice email"
                 >
                   <Send className="w-3.5 h-3.5" />
                   <span className="hidden sm:inline">Send</span>
@@ -177,19 +177,6 @@ export default function InvoiceDetails() {
           </div>
         </div>
       </div>
-
-      {/* Payment-first notice */}
-      {!hasPayment && inv.status !== 'cancelled' && (
-        <div
-          className="flex items-start gap-3 rounded-xl px-4 py-3 text-sm"
-          style={{ background: '#FFFBEB', border: '1px solid #FDE68A', color: '#92400E' }}
-        >
-          <CreditCard className="mt-0.5 w-4 h-4 shrink-0 text-amber-500" />
-          <span>
-            <strong>Record payment first.</strong> The Send button will be enabled once a payment is recorded against this invoice.
-          </span>
-        </div>
-      )}
 
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
 

@@ -304,15 +304,6 @@ const sendInvoiceEmail = async (invoiceId, companyId, emailData, userId) => {
   });
   // ─────────────────────────────────────────────────────────────────────────
 
-  // ── Payment-first guard ───────────────────────────────────────────────────
-  if (!freshInvoice.amountPaid || freshInvoice.amountPaid <= 0) {
-    throw Object.assign(
-      new Error('Record payment before sending the invoice email'),
-      { statusCode: 400 }
-    );
-  }
-  // ─────────────────────────────────────────────────────────────────────────
-
   // ── Regenerate PDF from the freshInvoice object we already have ───────────
   // Passing the plain object directly to generateInvoicePdf means the PDF is
   // built from exactly the same snapshot we verified above — no second DB
