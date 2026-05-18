@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 
 import { getInvoice, deleteInvoice } from '../api/invoices.api';
+import { useAuthStore } from '../store/authStore';
 
 import StatusBadge from '../components/ui/StatusBadge';
 import PaymentModal from '../components/payment/PaymentModal';
@@ -23,6 +24,8 @@ export default function InvoiceDetails() {
   const navigate = useNavigate();
   const qc = useQueryClient();
 
+  const selectedCompanyId = useAuthStore((s) => s.selectedCompanyId);
+
   const [showPayment, setShowPayment] = useState(false);
   const [showDelete, setShowDelete] = useState(false);
   const [showSend, setShowSend] = useState(false);
@@ -34,6 +37,12 @@ export default function InvoiceDetails() {
 
   const inv = data?.data?.data?.invoice;
 
+  // Direct URL for PDF — passed as an <a> href so the click is a real user
+  // gesture and bypasses Chrome's async-context download block.
+  const pdfUrl = selectedCompanyId
+    ? `/api/invoices/${id}/pdf?companyId=${selectedCompanyId}`
+    : `/api/invoices/${id}/pdf`;
+
   const { mutate: doDelete, isPending: deleting } = useMutation({
     mutationFn: () => deleteInvoice(id),
     onSuccess: () => {
@@ -43,6 +52,7 @@ export default function InvoiceDetails() {
     },
     onError: (e) => toast.error(e.response?.data?.message || 'Delete failed'),
   });
+
 
   const { fieldMap } = useCustomFields('invoice');
 
@@ -101,13 +111,14 @@ export default function InvoiceDetails() {
                 </button>
               )}
 
-              <button
+              <a
+                href={pdfUrl}
+                download={`invoice-${inv?.invoiceNumber || id}.pdf`}
                 className="flex items-center gap-1.5 h-8 px-3 rounded-xl text-xs font-semibold bg-white/20 hover:bg-white/30 text-white border border-white/20 transition-all"
-                onClick={() => window.open(`/api/invoices/${id}/pdf`, '_blank')}
               >
                 <Download className="w-3.5 h-3.5" />
                 <span className="hidden sm:inline">PDF</span>
-              </button>
+              </a>
 
               {canEdit && (
                 <button

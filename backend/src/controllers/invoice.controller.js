@@ -1,6 +1,6 @@
 const invoiceService = require('../services/invoice.service');
 const { generateInvoicePdf } = require('../services/pdf.service');
-const { previewNextInvoiceNumber, previewNextForClient } = require('../utils/invoiceNumber.util');
+const { previewNextInvoiceNumber } = require('../utils/invoiceNumber.util');
 const { success, created, paginated } = require('../utils/apiResponse');
 const { asyncHandler } = require('../middlewares/error.middleware');
 
@@ -65,14 +65,12 @@ const getPdf = asyncHandler(async (req, res) => {
 
   const fullPath = path.resolve(pdfPath);
   res.setHeader('Content-Type', 'application/pdf');
-  res.setHeader('Content-Disposition', `inline; filename="invoice-${invoice.invoiceNumber}.pdf"`);
+  res.setHeader('Content-Disposition', `attachment; filename="invoice-${invoice.invoiceNumber}.pdf"`);
   res.sendFile(fullPath);
 });
 const getNextNumber = asyncHandler(async (req, res) => {
-  const { clientId } = req.query;
-  const nextNumber = clientId
-    ? await previewNextForClient(req.companyId, clientId)
-    : await previewNextInvoiceNumber(req.companyId);
+  const clientId   = req.query.clientId || null;
+  const nextNumber = await previewNextInvoiceNumber(req.companyId, clientId);
   success(res, { nextNumber });
 });
 

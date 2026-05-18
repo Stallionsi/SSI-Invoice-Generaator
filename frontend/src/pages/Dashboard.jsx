@@ -7,6 +7,7 @@ import {
 } from 'recharts';
 import { getInvoices } from '../api/invoices.api';
 import { getClients } from '../api/clients.api';
+import { useAuthStore } from '../store/authStore';
 import StatsCard from '../components/ui/StatsCard';
 import StatusBadge from '../components/ui/StatusBadge';
 import Spinner from '../components/ui/Spinner';
@@ -35,21 +36,22 @@ function fmtCompact(amount, currency) {
 
 export default function Dashboard() {
   const navigate = useNavigate();
+  const activeId = useAuthStore((s) => s.selectedCompanyId);
 
   const { data: invRes, isLoading: invLoading } = useQuery({
-    queryKey: ['dashboard-invoices'],
+    queryKey: ['dashboard-invoices', activeId],
     queryFn:  () => getInvoices({ limit: 100, sort: '-createdAt' }),
     staleTime: 60_000,
   });
 
   const { data: clientsData } = useQuery({
-    queryKey: ['clients', { limit: 1 }],
+    queryKey: ['clients', activeId, { limit: 1 }],
     queryFn:  () => getClients({ limit: 1 }),
     staleTime: 60_000,
   });
 
   const { data: overdueData } = useQuery({
-    queryKey: ['invoices-overdue-count'],
+    queryKey: ['invoices-overdue-count', activeId],
     queryFn:  () => getInvoices({ overdue: 'true', limit: 1 }),
     staleTime: 60_000,
   });

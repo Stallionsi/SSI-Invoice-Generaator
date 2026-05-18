@@ -46,7 +46,9 @@ const sameCompany = (req, res, next) => {
  */
 const injectCompany = (req, res, next) => {
   const userCompanies = (req.user?.companies || []).map((c) => c.toString());
-  const requested     = req.headers['x-company-id'];
+  // Header takes priority; query param is the fallback for direct-navigation
+  // requests (e.g. PDF download) where custom headers can't be set.
+  const requested = req.headers['x-company-id'] || req.query.companyId;
 
   if (requested) {
     if (!userCompanies.includes(requested)) {

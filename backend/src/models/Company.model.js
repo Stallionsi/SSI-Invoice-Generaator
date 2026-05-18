@@ -38,6 +38,20 @@ const companySchema = new mongoose.Schema(
       trim: true,
       maxlength: [200, 'Company name cannot exceed 200 characters'],
     },
+    // Short identifier used as the invoice number prefix.
+    // e.g. "SSI/LLC" → invoice: "SSI/LLC-2026-27-0001"
+    // Falls back to invoiceSettings.prefix → env INVOICE_NUMBER_PREFIX → 'INV'.
+    // Optional; populate this in Company Settings for clean invoice numbering.
+    shortCode: {
+      type: String,
+      trim: true,
+      uppercase: true,
+      maxlength: [10, 'Short code cannot exceed 10 characters'],
+      match: [
+        /^[A-Z0-9/_-]+$/,
+        'Short code may only contain letters, numbers, /, _, and -',
+      ],
+    },
     address: addressSchema,
     // Indian tax identifiers
     gstNumber: {
@@ -115,5 +129,7 @@ const companySchema = new mongoose.Schema(
 // ─── Indexes ───────────────────────────────────────────────────────────────
 companySchema.index({ gstNumber: 1 }, { sparse: true });
 companySchema.index({ owner: 1 });
+// sparse: true because shortCode is optional; null values are not indexed.
+companySchema.index({ shortCode: 1 }, { sparse: true });
 
 module.exports = mongoose.model('Company', companySchema);

@@ -5,7 +5,7 @@ const Client = require('../models/Client.model');
 const Company = require('../models/Company.model');
 const { generateInvoicePdf } = require('./pdf.service');
 const { calculateLineItem, calculateInvoiceTotals, calculateDueDate } = require('../utils/calculation.util');
-const { getNextClientInvoiceNumber } = require('../utils/invoiceNumber.util');
+const { reserveNextInvoiceNumber } = require('../utils/invoiceNumber.util');
 const { parsePagination, buildPaginationMeta, parseInvoiceFilters } = require('../utils/pagination.util');
 const { addPdfJob, scheduleReminder, addWebhookJob } = require('../config/queue');
 const emailService = require('./email.service');
@@ -97,41 +97,33 @@ const create = async (data, companyId, userId) => {
           || 'Net 30',
       );
 
-  // ── Invoice Number Resolution (per-client sequence) ───────────────────────
-  // Collision checks are scoped to (company + client) — different clients may
-  // share the same invoice number and that is intentional.
+  // ── Invoice Number Resolution (per-client sequence) ──────────────────────
+  //
+  // Numbers are scoped to (company + client), so each client has their own
+  // independent sequence:  Client A → 0001, 0002, 0003
+  //                        Client B → 0001, 0002  (same company, separate counter)
+  //
+  // The (company, client, invoiceNumber) unique index on Invoice enforces that
+  // no two invoices for the same client share a number.
+  //
+  // IMPORTANT — reserve BEFORE any transaction: the atomic $inc commits
+  // immediately.  If creation later fails, the number is burned (a gap appears).
+  // Gaps are acceptable; duplicates are not.
   let invoiceNumber;
   if (data.invoiceNumber && data.invoiceNumber.trim()) {
     invoiceNumber = data.invoiceNumber.trim();
 
-    const taken = await Invoice.exists({
-      company:       companyId,
-      client:        client._id,
-      invoiceNumber,
-    });
-
+    // Uniqueness check scoped to this client (same number may exist for others).
+    const taken = await Invoice.exists({ company: companyId, client: client._id, invoiceNumber });
     if (taken) {
-      // Number already used for this client — bump within their own sequence
-      const parts  = invoiceNumber.split('-');
-      const suffix = parts[parts.length - 1];
-      const num    = parseInt(suffix, 10);
-      const pfx    = parts.slice(0, -1).join('-');
-      const pad    = suffix.length;
-
-      if (!isNaN(num) && pfx) {
-        let next = num + 1;
-        let candidate;
-        do {
-          candidate = `${pfx}-${String(next).padStart(pad, '0')}`;
-          next++;
-        } while (await Invoice.exists({ company: companyId, client: client._id, invoiceNumber: candidate }));
-        invoiceNumber = candidate;
-      } else {
-        invoiceNumber = await getNextClientInvoiceNumber(companyId, client._id);
-      }
+      throw Object.assign(
+        new Error(`Invoice number "${invoiceNumber}" is already in use for this client`),
+        { statusCode: 409 },
+      );
     }
   } else {
-    invoiceNumber = await getNextClientInvoiceNumber(companyId, client._id);
+    // Atomic per-client sequence — safe under concurrent invoice creation.
+    invoiceNumber = await reserveNextInvoiceNumber(companyId, { clientId: client._id });
   }
 
   // Unique view token for client-facing link
@@ -389,7 +381,7 @@ const duplicate = async (invoiceId, companyId, userId) => {
   if (!source) throw Object.assign(new Error('Invoice not found'), { statusCode: 404 });
 
   const { _id, invoiceNumber, status, createdAt, updatedAt, viewToken, pdfUrl, ...rest } = source;
-  const newNumber = await generateInvoiceNumber(companyId);
+  const newNumber = await reserveNextInvoiceNumber(companyId, { clientId: source.client });
 
   return Invoice.create({
     ...rest,
@@ -412,7 +404,7 @@ const createCreditNote = async (invoiceId, companyId, userId) => {
   const source = await Invoice.findOne({ _id: invoiceId, company: companyId }).lean();
   if (!source) throw Object.assign(new Error('Invoice not found'), { statusCode: 404 });
 
-  const cnNumber = await generateInvoiceNumber(companyId);
+  const cnNumber = await reserveNextInvoiceNumber(companyId, { clientId: source.client });
 
   return Invoice.create({
     ...source,

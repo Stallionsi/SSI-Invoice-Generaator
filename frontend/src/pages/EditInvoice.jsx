@@ -8,6 +8,7 @@ import toast from 'react-hot-toast';
 import { ArrowLeft } from 'lucide-react';
 import { getInvoice, updateInvoice } from '../api/invoices.api';
 import { getClients, getClient } from '../api/clients.api';
+import { useAuthStore } from '../store/authStore';
 import LineItemEditor from '../components/invoice/LineItemEditor';
 import InvoiceTotals from '../components/invoice/InvoiceTotals';
 import PageHeader from '../components/ui/PageHeader';
@@ -106,6 +107,7 @@ export default function EditInvoice() {
   const { id }   = useParams();
   const navigate = useNavigate();
   const qc       = useQueryClient();
+  const activeId = useAuthStore((s) => s.selectedCompanyId);
 
   // ── Custom Fields ──────────────────────────────────────────────────────────
   const { fieldsBySection, evaluateVisibility, buildInitialValues, loading: cfLoading } =
@@ -129,7 +131,7 @@ export default function EditInvoice() {
 
   // ── Clients ────────────────────────────────────────────────────────────────
   const { data: clientsData } = useQuery({
-    queryKey: ['clients', { limit: 100 }],
+    queryKey: ['clients', activeId, { limit: 100 }],
     queryFn:  () => getClients({ limit: 100 }),
   });
   const clients = clientsData?.data?.data?.clients || [];
@@ -199,7 +201,7 @@ export default function EditInvoice() {
   }, [inv]);
 
   const { data: selectedClientData } = useQuery({
-    queryKey: ['client', watchedClient],
+    queryKey: ['client', activeId, watchedClient],
     queryFn:  () => getClient(watchedClient),
     enabled:  !!watchedClient,
     staleTime: 60_000,

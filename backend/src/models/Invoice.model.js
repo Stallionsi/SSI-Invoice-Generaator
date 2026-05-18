@@ -312,10 +312,17 @@ const invoiceSchema = new mongoose.Schema(
 );
 
 // ─── Indexes ───────────────────────────────────────────────────────────────
-// Per-client uniqueness: Compucom and Primacysi can both have invoice 2001.
-// If upgrading from the old schema, drop the old index manually in MongoDB:
-//   db.invoices.dropIndex("company_1_invoiceNumber_1")
+// Legacy per-client uniqueness index — kept for backward compat.
+// Historical invoices were created under a per-client numbering model where
+// two different clients of the same company could share the same number.
+// Dropping this index would require a full data audit, so we leave it.
 invoiceSchema.index({ company: 1, client: 1, invoiceNumber: 1 }, { unique: true });
+
+// Company-wide invoice number lookup — used by the uniqueness check in
+// invoice.service.js create() and by the GET /next-number preview.
+// NOT unique: historical invoices may share numbers across clients (see above).
+// New invoices never will — enforced at the application layer in create().
+invoiceSchema.index({ company: 1, invoiceNumber: 1 });
 invoiceSchema.index({ company: 1, status: 1 });
 invoiceSchema.index({ company: 1, client: 1 });
 invoiceSchema.index({ company: 1, dueDate: 1 });

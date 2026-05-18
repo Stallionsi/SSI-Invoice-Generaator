@@ -3,6 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { Plus, FileText, Search, ChevronLeft, ChevronRight, X } from 'lucide-react';
 import { getInvoices } from '../api/invoices.api';
+import { useAuthStore } from '../store/authStore';
 import PageHeader from '../components/ui/PageHeader';
 import StatusBadge from '../components/ui/StatusBadge';
 import EmptyState from '../components/ui/EmptyState';
@@ -26,6 +27,7 @@ function SkeletonRow() {
 export default function Invoices() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
+  const activeId = useAuthStore((s) => s.selectedCompanyId);
   // Seed the status filter from ?status=overdue (or any status) in the URL
   const [status, setStatus] = useState(searchParams.get('status') || '');
   const [inputValue, setInputValue] = useState('');
@@ -49,7 +51,7 @@ export default function Invoices() {
   };
 
   const { data, isLoading, isFetching } = useQuery({
-    queryKey: ['invoices', { status, search, fromDate, toDate, page }],
+    queryKey: ['invoices', activeId, { status, search, fromDate, toDate, page }],
     queryFn: () => getInvoices({
       status:   status   || undefined,
       search:   search   || undefined,

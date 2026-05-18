@@ -1,37 +1,20 @@
 import { useNavigate } from 'react-router-dom';
 import { LogOut, Menu, Building2, ChevronDown, ChevronRight } from 'lucide-react';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
 import { logout } from '../../api/auth.api';
-import { getMyCompanies } from '../../api/company.api';
 import { useAuthStore } from '../../store/authStore';
+import { useActiveCompany } from '../../hooks/useActiveCompany';
 
 export default function Navbar({ onMenuClick }) {
   const navigate = useNavigate();
-  const qc = useQueryClient();
-  const { user, logout: clearUser, selectedCompanyId, setSelectedCompanyId } = useAuthStore();
-
-  const { data: companiesData } = useQuery({
-    queryKey: ['my-companies'],
-    queryFn: getMyCompanies,
-    staleTime: 5 * 60 * 1000,
-  });
-
-  const companies = companiesData?.data?.data?.companies || [];
-  const activeId = selectedCompanyId || companies[0]?._id;
-  const activeCompany = companies.find((c) => c._id === activeId) || companies[0];
-
-  const handleSwitch = (companyId) => {
-    if (companyId === activeId) return;
-    setSelectedCompanyId(companyId);
-    qc.invalidateQueries();
-    toast.success(`Switched to ${companies.find((c) => c._id === companyId)?.companyName}`);
-  };
+  const { user, logout: clearUser } = useAuthStore();
+  const { companies, activeCompany, activeId, handleSwitch } = useActiveCompany();
 
   const { mutate: doLogout } = useMutation({
     mutationFn: logout,
-    onSettled: () => { clearUser(); navigate('/login'); },
-    onError: () => toast.error('Logout failed'),
+    onSettled:  () => { clearUser(); navigate('/login'); },
+    onError:    () => toast.error('Logout failed'),
   });
 
   const initials = user?.name
@@ -43,7 +26,7 @@ export default function Navbar({ onMenuClick }) {
       className="h-14 flex items-center justify-between px-4 md:px-6 shrink-0 bg-white"
       style={{ borderBottom: '1px solid #EEF2FF', boxShadow: '0 1px 8px rgba(99,102,241,0.06)' }}
     >
-      {/* Left — mobile hamburger + company breadcrumb */}
+      {/* Left — mobile hamburger + active company breadcrumb */}
       <div className="flex items-center gap-3">
         <button
           onClick={onMenuClick}
@@ -63,10 +46,10 @@ export default function Navbar({ onMenuClick }) {
         )}
       </div>
 
-      {/* Right — company switcher + user + logout */}
+      {/* Right — company switcher + user info + logout */}
       <div className="flex items-center gap-2">
 
-        {/* Company switcher */}
+        {/* Company switcher — only renders when user has at least one company */}
         {companies.length > 0 && (
           <div className="relative group">
             <button
@@ -82,13 +65,14 @@ export default function Navbar({ onMenuClick }) {
               )}
             </button>
 
+            {/* Dropdown — only rendered when user has multiple companies */}
             {companies.length > 1 && (
               <div
                 className="absolute right-0 top-full mt-2 w-60 rounded-xl z-50 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-150 origin-top-right"
                 style={{
-                  background: '#FFFFFF',
-                  border: '1px solid #E5E7EB',
-                  boxShadow: '0 8px 24px rgba(0,0,0,0.10)',
+                  background:  '#FFFFFF',
+                  border:      '1px solid #E5E7EB',
+                  boxShadow:   '0 8px 24px rgba(0,0,0,0.10)',
                 }}
               >
                 <div className="p-1.5">
@@ -98,7 +82,9 @@ export default function Navbar({ onMenuClick }) {
                   {companies.map((c) => (
                     <button
                       key={c._id}
-                      onClick={() => handleSwitch(c._id)}
+                      // Pass full company object — handleSwitch sets both
+                      // selectedCompanyId and activeCompany atomically.
+                      onClick={() => handleSwitch(c)}
                       className="w-full text-left flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm transition-colors"
                       style={
                         c._id === activeId
@@ -107,9 +93,17 @@ export default function Navbar({ onMenuClick }) {
                       }
                     >
                       <Building2 className="w-3.5 h-3.5 shrink-0 opacity-60" />
-                      <span className="truncate font-medium">{c.companyName}</span>
+                      <div className="flex flex-col min-w-0">
+                        <span className="truncate font-medium">{c.companyName}</span>
+                        {/* Show prefix so user knows which invoice series belongs to this company */}
+                        {(c.shortCode || c.invoiceSettings?.prefix) && (
+                          <span className="text-[10px] text-gray-400 font-mono">
+                            {c.shortCode || c.invoiceSettings?.prefix}
+                          </span>
+                        )}
+                      </div>
                       {c._id === activeId && (
-                        <span className="ml-auto text-[10px] font-bold uppercase tracking-wider text-primary-600">
+                        <span className="ml-auto text-[10px] font-bold uppercase tracking-wider text-primary-600 shrink-0">
                           Active
                         </span>
                       )}

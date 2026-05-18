@@ -4,6 +4,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Plus, Search, Pencil, Trash2, Users, Eye } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { getClients, deleteClient } from '../api/clients.api';
+import { useAuthStore } from '../store/authStore';
 import PageHeader from '../components/ui/PageHeader';
 import Spinner from '../components/ui/Spinner';
 import EmptyState from '../components/ui/EmptyState';
@@ -12,6 +13,7 @@ import ConfirmDialog from '../components/ui/ConfirmDialog';
 export default function Clients() {
   const navigate = useNavigate();
   const qc = useQueryClient();
+  const activeId = useAuthStore((s) => s.selectedCompanyId);
   const [inputValue, setInputValue]   = useState('');
   const [search, setSearch]           = useState('');
   const [deleteTarget, setDeleteTarget] = useState(null);
@@ -23,7 +25,7 @@ export default function Clients() {
   }, [inputValue]);
 
   const { data, isLoading } = useQuery({
-    queryKey: ['clients', { search }],
+    queryKey: ['clients', activeId, { search }],
     queryFn: () => getClients({ search: search || undefined, limit: 50 }),
     keepPreviousData: true,
   });

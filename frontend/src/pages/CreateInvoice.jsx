@@ -1,11 +1,11 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useForm, useWatch } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
-import { ArrowLeft } from 'lucide-react';
+import { ArrowLeft, Building2 } from 'lucide-react';
 import { createInvoice, getNextInvoiceNumber } from '../api/invoices.api';
 import { getClients, getClient } from '../api/clients.api';
 import LineItemEditor from '../components/invoice/LineItemEditor';
@@ -14,6 +14,7 @@ import PageHeader from '../components/ui/PageHeader';
 import Spinner from '../components/ui/Spinner';
 import { calcInvoiceTotals } from '../utils/calculations';
 import SimpleCustomFields from '../components/customFields/SimpleCustomFields';
+import { useActiveCompany } from '../hooks/useActiveCompany';
 
 // ─── Zod schemas ───────────────────────────────────────────────────────────────
 const itemSchema = z.object({
@@ -126,6 +127,11 @@ export default function CreateInvoice() {
   const navigate  = useNavigate();
   const qc        = useQueryClient();
 
+  // ── Multi-company context ──────────────────────────────────────────────────
+  const { companies, activeCompany, activeId, handleSwitch } = useActiveCompany();
+  // Tracks the last seen activeId so we can distinguish first-load from a real switch
+  const lastCompanyIdRef = useRef(null);
+
   // ── Custom Fields ──────────────────────────────────────────────────────────
   const [customFields, setCustomFields] = useState({});
   const handleCustomFieldChange = (key, value) =>
@@ -136,7 +142,7 @@ export default function CreateInvoice() {
 
   // ── Clients ────────────────────────────────────────────────────────────────
   const { data: clientsData } = useQuery({
-    queryKey: ['clients', { limit: 100 }],
+    queryKey: ['clients', activeId, { limit: 100 }],
     queryFn:  () => getClients({ limit: 100 }),
   });
   const clients = clientsData?.data?.data?.clients || [];
@@ -149,9 +155,9 @@ export default function CreateInvoice() {
   // Watch client + invoiceDate to auto-fill dueDate from client's payment terms
   const [watchedClient, watchedInvoiceDate] = useWatch({ control, name: ['client', 'invoiceDate'] });
 
-  // ── Next invoice number — re-fetches whenever the selected client changes ────
+  // ── Next invoice number — re-fetches whenever the active company or client changes ──
   const { data: nextNumberData } = useQuery({
-    queryKey: ['invoices', 'next-number', watchedClient],
+    queryKey: ['invoices', 'next-number', activeId, watchedClient],
     queryFn:  () => getNextInvoiceNumber(watchedClient || null),
     staleTime: 0,
   });
@@ -164,7 +170,7 @@ export default function CreateInvoice() {
   }, [nextInvoiceNumber]);
 
   const { data: selectedClientData } = useQuery({
-    queryKey: ['client', watchedClient],
+    queryKey: ['client', activeId, watchedClient],
     queryFn:  () => getClient(watchedClient),
     enabled:  !!watchedClient,
     staleTime: 60_000,
@@ -199,6 +205,31 @@ export default function CreateInvoice() {
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currency]);
+
+  // When the active company resolves or the user switches companies mid-form:
+  //   First resolution  → apply the company's default currency (no form reset)
+  //   Subsequent switch → reset client selection, apply default currency + gstType
+  useEffect(() => {
+    if (!activeId) return;
+
+    const isFirstResolution = lastCompanyIdRef.current === null;
+    lastCompanyIdRef.current = activeId;
+
+    const defaultCurrency = activeCompany?.invoiceSettings?.defaultCurrency || 'INR';
+
+    if (isFirstResolution) {
+      if (defaultCurrency !== 'INR') {
+        setValue('currency', defaultCurrency, { shouldDirty: false });
+      }
+      return;
+    }
+
+    // Company switched mid-form — clear client and apply the new company's defaults
+    setValue('client',   '',              { shouldDirty: false });
+    setValue('currency', defaultCurrency, { shouldDirty: false });
+    setValue('gstType',  defaultCurrency !== 'INR' ? 'none' : 'intrastate', { shouldDirty: false });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeId]);
 
   // Project "started" toggle drives date field visibility
   const projectStarted = useWatch({ control, name: 'project.started', defaultValue: false });
@@ -248,6 +279,55 @@ export default function CreateInvoice() {
         {/* ── Header card ── */}
         <div className="card">
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+
+            {/* Company selector — only shown when user belongs to multiple companies */}
+            {companies.length > 1 && (
+              <div className="col-span-1 sm:col-span-2 lg:col-span-3">
+                <label className="label">Billing Company</label>
+                <div className="flex flex-wrap items-center gap-3">
+                  <select
+                    className="input w-full sm:w-auto sm:max-w-xs"
+                    value={activeId || ''}
+                    onChange={(e) => {
+                      const company = companies.find((c) => c._id === e.target.value);
+                      if (company) handleSwitch(company);
+                    }}
+                  >
+                    {companies.map((c) => (
+                      <option key={c._id} value={c._id}>{c.companyName}</option>
+                    ))}
+                  </select>
+
+                  {activeCompany && (
+                    <div className="flex flex-wrap items-center gap-2">
+                      {(activeCompany.shortCode || activeCompany.invoiceSettings?.prefix) && (
+                        <span
+                          className="inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-mono font-semibold"
+                          style={{ background: '#EEF2FF', color: '#4F46E5' }}
+                        >
+                          <Building2 className="w-3 h-3" />
+                          {activeCompany.shortCode || activeCompany.invoiceSettings?.prefix}
+                        </span>
+                      )}
+                      {activeCompany.gstNumber && (
+                        <span className="text-xs text-gray-500 font-mono">
+                          GST: {activeCompany.gstNumber}
+                        </span>
+                      )}
+                      {activeCompany.invoiceSettings?.defaultCurrency &&
+                        activeCompany.invoiceSettings.defaultCurrency !== 'INR' && (
+                        <span
+                          className="inline-flex items-center px-2 py-1 rounded text-xs font-semibold"
+                          style={{ background: '#FEF3C7', color: '#92400E' }}
+                        >
+                          {activeCompany.invoiceSettings.defaultCurrency}
+                        </span>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
 
             {/* Invoice number — pre-filled from counter, fully editable */}
             <div>

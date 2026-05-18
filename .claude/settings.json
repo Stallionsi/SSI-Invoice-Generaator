@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(Get-ChildItem -Recurse -Directory)",
+      "Bash(Select-Object -ExpandProperty FullName)",
+      "PowerShell(cd \"c:\\\\Users\\\\saura\\\\OneDrive\\\\Desktop\\\\SSI-PROJECTS\\\\Invoice Generator\"; Get-ChildItem -File -Name | Where-Object {$_ -match 'README|CLAUDE|readme|claude'})",
+      "Bash(python -c ' *)"
+    ]
+  }
+}
