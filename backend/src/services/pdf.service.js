@@ -347,11 +347,11 @@ const drawParties = (doc, invoice, y) => {
 // Column layout (total = 515 = CW)
 const COLS = [
   { label: '#',           x: M,       w: 22,  align: 'left'   },
-  { label: 'Description', x: M + 22,  w: 228, align: 'left'   },  // +50 from removed HSN/SAC
-  { label: 'Qty',         x: M + 250, w: 35,  align: 'right'  },
-  { label: 'Rate',        x: M + 285, w: 80,  align: 'right'  },
-  { label: 'Tax',         x: M + 365, w: 40,  align: 'center' },
-  { label: 'Amount',      x: M + 405, w: 110, align: 'right'  },
+  { label: 'Description', x: M + 22,  w: 268, align: 'left'   },
+  { label: 'Qty',         x: M + 290, w: 35,  align: 'right'  },
+  { label: 'Rate',        x: M + 325, w: 60,  align: 'right'  },
+  { label: 'Tax',         x: M + 385, w: 40,  align: 'center' },
+  { label: 'Amount',      x: M + 425, w: 90,  align: 'right'  },
 ];
 
 const drawItemsTable = (doc, invoice, y) => {
@@ -371,61 +371,73 @@ const drawItemsTable = (doc, invoice, y) => {
   });
   y += ROW_H;
 
-  // Data rows
-  // Description column wraps freely; row height expands to fit it.
-  // Other columns (single-line) are vertically centred within the dynamic row.
-  const DESC_W       = COLS[1].w - 8;  // 220pt (HSN/SAC col removed)
-  const CHARS_PER_LINE = 30;           // conservative estimate for Helvetica-Bold 8.5pt
-  const WRAP_LINE_H  = 12;             // pt per wrapped description line
-  const ROW_VPAD     = 10;             // total top+bottom padding
+  // Data rows — pre-measure ALL rows first to get a uniform height across the table
+  const CELL_PAD = 4;
+  const PAD_TOP  = 8;
+  const PAD_BOT  = 8;
+  const MIN_ROW  = 28;
+  const DESC_X   = COLS[1].x + CELL_PAD;
+  const DESC_W   = COLS[1].w - CELL_PAD * 2;  // 220pt
 
-  (invoice.lineItems || []).forEach((item, i) => {
+  // Pass 1: measure each row so all rows share the tallest height
+  const lineItems = invoice.lineItems || [];
+  let uniformRowH = MIN_ROW;
+  const measurements = lineItems.map((item) => {
     const desc    = safe(item.description);
     const subline = item.secondLineDescription ? safe(item.secondLineDescription) : null;
 
-    // Estimate how many lines the description will occupy after wrapping
-    const descLines   = Math.max(1, Math.ceil(desc.length / CHARS_PER_LINE));
-    const descContentH = descLines * WRAP_LINE_H + (subline ? WRAP_LINE_H : 0);
-    const rowH         = Math.max(ROW_H, descContentH + ROW_VPAD);
+    doc.font('Helvetica-Bold').fontSize(8.5);
+    const descH = doc.heightOfString(desc || ' ', { width: DESC_W });
 
-    y = checkPage(doc, y, rowH + 10);
-    fillRect(doc, M, y, CW, rowH, i % 2 === 0 ? BGLT : WHITE);
+    doc.font('Helvetica').fontSize(7.5);
+    const subH = subline ? doc.heightOfString(subline, { width: DESC_W }) + 2 : 0;
 
-    // Description starts near the top; other columns are vertically centred
-    const descTopY  = y + 6;
-    const otherColY = y + Math.round((rowH - 9) / 2);  // centre single-line text
+    const h = Math.max(MIN_ROW, Math.ceil(descH + subH) + PAD_TOP + PAD_BOT);
+    if (h > uniformRowH) uniformRowH = h;
+    return { desc, subline, descH };
+  });
 
-    // # column (vertically centred)
+  // Pass 2: render every row at uniformRowH
+  measurements.forEach(({ desc, subline, descH }, i) => {
+    const item = lineItems[i];
+
+    y = checkPage(doc, y, uniformRowH + 10);
+    fillRect(doc, M, y, CW, uniformRowH, i % 2 === 0 ? BGLT : WHITE);
+
+    const centerY  = y + Math.round((uniformRowH - 9) / 2);
+    const descTopY = y + PAD_TOP;
+
+    // # column
     doc.font('Helvetica-Bold').fontSize(8).fillColor(NAVY)
-      .text(String(i + 1), COLS[0].x + 4, otherColY, { width: COLS[0].w - 8, align: 'left', lineBreak: false });
+      .text(String(i + 1), COLS[0].x + CELL_PAD, centerY, { width: COLS[0].w - CELL_PAD * 2, align: 'left', lineBreak: false });
 
-    // Description — wraps to fill column width naturally
+    // Description
     doc.font('Helvetica-Bold').fontSize(8.5).fillColor(NAVY)
-      .text(desc, COLS[1].x + 4, descTopY, { width: DESC_W, lineBreak: true });
+      .text(desc, DESC_X, descTopY, { width: DESC_W, lineBreak: true });
     if (subline) {
-      const subY = descTopY + descLines * WRAP_LINE_H + 1;
+      const subY = descTopY + Math.ceil(descH) + 2;
       doc.font('Helvetica').fontSize(7.5).fillColor(GRAY)
-        .text(subline, COLS[1].x + 4, subY, { width: DESC_W, lineBreak: false });
+        .text(subline, DESC_X, subY, { width: DESC_W, lineBreak: true });
     }
 
-    // Qty  (COLS[2] after HSN/SAC removal)
+    // Qty
     doc.font('Helvetica').fontSize(8.5).fillColor(BODY)
-      .text(fmt(item.quantity), COLS[2].x + 4, otherColY, { width: COLS[2].w - 8, align: 'right', lineBreak: false });
+      .text(fmt(item.quantity), COLS[2].x + CELL_PAD, centerY, { width: COLS[2].w - CELL_PAD * 2, align: 'right', lineBreak: false });
 
     // Rate
     doc.font('Helvetica').fontSize(8.5).fillColor(BODY)
-      .text(cur(currency, item.unitPrice), COLS[3].x + 4, otherColY, { width: COLS[3].w - 8, align: 'right', lineBreak: false });
+      .text(cur(currency, item.unitPrice), COLS[3].x + CELL_PAD, centerY, { width: COLS[3].w - CELL_PAD * 2, align: 'right', lineBreak: false });
 
     // Tax rate
     const taxLabel = item.taxRate > 0 ? `${item.taxRate}%` : '\u2014';
     doc.font('Helvetica').fontSize(8).fillColor(GRAY)
-      .text(taxLabel, COLS[4].x + 4, otherColY, { width: COLS[4].w - 8, align: 'center', lineBreak: false });
+      .text(taxLabel, COLS[4].x + CELL_PAD, centerY, { width: COLS[4].w - CELL_PAD * 2, align: 'center', lineBreak: false });
 
     // Amount
     doc.font('Helvetica-Bold').fontSize(8.5).fillColor(NAVY)
-      .text(cur(currency, item.amount), COLS[5].x + 4, otherColY, { width: COLS[5].w - 8, align: 'right', lineBreak: false });
+      .text(cur(currency, item.amount), COLS[5].x + CELL_PAD, centerY, { width: COLS[5].w - CELL_PAD * 2, align: 'right', lineBreak: false });
 
-    y += rowH;
+    y += uniformRowH;
   });
 
   // Footer summary row

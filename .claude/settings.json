@@ -4,7 +4,19 @@
       "Bash(Get-ChildItem -Recurse -Directory)",
       "Bash(Select-Object -ExpandProperty FullName)",
       "PowerShell(cd \"c:\\\\Users\\\\saura\\\\OneDrive\\\\Desktop\\\\SSI-PROJECTS\\\\Invoice Generator\"; Get-ChildItem -File -Name | Where-Object {$_ -match 'README|CLAUDE|readme|claude'})",
-      "Bash(python -c ' *)"
+      "Bash(python -c ' *)",
+      "Bash(node -e \"require\\('./src/utils/invoiceNumber.util'\\)\")",
+      "Bash(node -e \"require\\('./src/models/InvoiceSequence.model'\\)\")",
+      "Bash(node -e \"require\\('./src/services/invoice.service'\\)\")",
+      "Bash(node -e \"require\\('./src/controllers/invoice.controller'\\)\")",
+      "Bash(node -e \"require\\('./src/services/auth.service'\\)\")",
+      "Bash(Get-ChildItem -Path \"c:\\\\Users\\\\saura\\\\OneDrive\\\\Desktop\\\\SSI-PROJECTS\\\\Invoice Generator\\\\backend\\\\src\" -Recurse -Filter \"*auth*\")",
+      "Bash(Select-Object FullName)",
+      "Bash(node -e \"require\\('./src/config/db'\\)\")",
+      "Bash(node -e ' *)",
+      "Bash(node -e \"const fs=require\\('fs'\\);const content=fs.readFileSync\\('pdf.service.js','utf8'\\);const lines=content.split\\('\\\\n'\\);for\\(let i=374;i<=430;i++\\){console.log\\(i+1,'|',JSON.stringify\\(lines[i]\\)\\)}\")",
+      "Bash(node fix_pdf_table.js)",
+      "Bash(Remove-Item \"c:\\\\Users\\\\saura\\\\OneDrive\\\\Desktop\\\\SSI-PROJECTS\\\\Invoice Generator\\\\fix_pdf_table.js\")"
     ]
   }
 }
