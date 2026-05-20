@@ -16,7 +16,10 @@
       "Bash(node -e ' *)",
       "Bash(node -e \"const fs=require\\('fs'\\);const content=fs.readFileSync\\('pdf.service.js','utf8'\\);const lines=content.split\\('\\\\n'\\);for\\(let i=374;i<=430;i++\\){console.log\\(i+1,'|',JSON.stringify\\(lines[i]\\)\\)}\")",
       "Bash(node fix_pdf_table.js)",
-      "Bash(Remove-Item \"c:\\\\Users\\\\saura\\\\OneDrive\\\\Desktop\\\\SSI-PROJECTS\\\\Invoice Generator\\\\fix_pdf_table.js\")"
+      "Bash(Remove-Item \"c:\\\\Users\\\\saura\\\\OneDrive\\\\Desktop\\\\SSI-PROJECTS\\\\Invoice Generator\\\\fix_pdf_table.js\")",
+      "Bash(Get-ChildItem -Path \"c:\\\\Users\\\\saura\\\\OneDrive\\\\Desktop\\\\SSI-PROJECTS\\\\Invoice Generator\\\\backend\\\\src\" -Recurse -Directory)",
+      "Bash(node --input-type=module)",
+      "Bash(node -e \"require\\('dotenv'\\).config\\(\\); const { Worker } = require\\('bullmq'\\); const { getRedisConnection } = require\\('./src/config/redis'\\); try { const w = new Worker\\('tv', async \\(\\) => {}, { connection: getRedisConnection\\(\\) }\\); console.log\\('OK - Worker constructed'\\); setTimeout\\(\\(\\) => { w.close\\(\\); process.exit\\(0\\); }, 500\\); } catch \\(e\\) { console.error\\('FAIL:', e.message\\); process.exit\\(1\\); }\")"
     ]
   }
 }

@@ -343,6 +343,82 @@ const drawParties = (doc, invoice, y) => {
   return nextY + 12;
 };
 
+// ─── Section: PROJECT / ENGAGEMENT DETAILS ───────────────────────────────────
+const drawProject = (doc, invoice, y) => {
+  const project = invoice.project;
+  if (!project || !safe(project.name).trim()) return y;
+
+  const name        = safe(project.name).trim();
+  const description = project.description ? safe(project.description).trim() : '';
+  const hasDates    = project.startDate || project.endDate;
+  const hasStarted  = project.started === true;
+
+  // Estimate body height for checkPage
+  let bodyH = 10 + 18; // top padding + name row
+  if (description) {
+    doc.font('Helvetica').fontSize(8.5);
+    bodyH += doc.heightOfString(description, { width: CW - 24 }) + 8;
+  }
+  if (hasDates)  bodyH += 26;
+  bodyH += 10; // bottom padding
+
+  y = checkPage(doc, y, 18 + bodyH + 14);
+
+  // Header bar
+  fillRect(doc, M, y, CW, 18, '#dbeafe');
+  doc.font('Helvetica-Bold').fontSize(7.5).fillColor(BLUE)
+    .text('PROJECT / ENGAGEMENT', M + 12, y + 5, { lineBreak: false });
+  y += 18;
+
+  fillRect(doc, M, y, CW, bodyH, BGLT);
+  strokeRect(doc, M, y - 18, CW, bodyH + 18, '#bfdbfe');
+
+  let ty = y + 10;
+
+  // Project name on the left; "● Started" badge on the right (if started)
+  doc.font('Helvetica-Bold').fontSize(11).fillColor(NAVY);
+  const nameW = doc.widthOfString(name);
+  doc.text(name, M + 12, ty, { lineBreak: false });
+  if (hasStarted) {
+    const badgeX = M + 12 + nameW + 10;
+    if (badgeX + 60 < R - 12) {
+      doc.font('Helvetica').fontSize(8).fillColor(GREEN)
+        .text('● Started', badgeX, ty + 2, { lineBreak: false });
+    } else {
+      // Name too long — put badge right-aligned
+      doc.font('Helvetica').fontSize(8).fillColor(GREEN)
+        .text('● Started', M, ty + 2, { width: CW - 12, align: 'right', lineBreak: false });
+    }
+  }
+  ty += 18;
+
+  if (description) {
+    doc.font('Helvetica').fontSize(8.5).fillColor(BODY)
+      .text(description, M + 12, ty, { width: CW - 24 });
+    doc.font('Helvetica').fontSize(8.5);
+    ty += doc.heightOfString(description, { width: CW - 24 }) + 8;
+  }
+
+  if (hasDates) {
+    const colW = (CW - 24) / 2;
+    if (project.startDate) {
+      doc.font('Helvetica').fontSize(7.5).fillColor(GRAY)
+        .text('Start Date', M + 12, ty, { width: colW, lineBreak: false });
+      doc.font('Helvetica-Bold').fontSize(8.5).fillColor(NAVY)
+        .text(fmtDate(project.startDate), M + 12, ty + 11, { width: colW, lineBreak: false });
+    }
+    if (project.endDate) {
+      const col2X = M + 12 + colW;
+      doc.font('Helvetica').fontSize(7.5).fillColor(GRAY)
+        .text('End Date', col2X, ty, { width: colW, lineBreak: false });
+      doc.font('Helvetica-Bold').fontSize(8.5).fillColor(NAVY)
+        .text(fmtDate(project.endDate), col2X, ty + 11, { width: colW, lineBreak: false });
+    }
+  }
+
+  return y + bodyH + 14;
+};
+
 // ─── Section: ITEMS TABLE ─────────────────────────────────────────────────────
 // Column layout (total = 515 = CW)
 const COLS = [
@@ -832,6 +908,7 @@ const generateInvoicePdf = async (invoiceIdOrObject) => {
         y = drawAccentBar(doc, y);
         y = drawMetaStrip(doc, invoice, y);
         y = drawParties(doc, invoice, y);
+        y = drawProject(doc, invoice, y);
         y = drawItemsTable(doc, invoice, y);
         y = drawTotals(doc, invoice, y);
         y = drawCustomFields(doc, mergedCustomFields, y);
