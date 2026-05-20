@@ -1,127 +1,131 @@
 /**
- * Overdue Invoice Reminder Cron Job
+ * Reminder Scheduler Cron — Daily Safety Net
  *
- * Runs daily at 09:00 AM (server local time).
- * Finds all invoices that are:
- *   - More than 1 day past their dueDate
- *   - Status is not 'paid' or 'cancelled' or 'draft'
- *   - Have a recipientEmail
- *   - Have NOT been reminded in the last 24 hours (lastReminderSentAt guard)
+ * Runs daily at 09:00 AM. Acts as a catch-all for the BullMQ reminder system:
+ *   - Covers invoices created before BullMQ scheduling was in place
+ *   - Re-queues milestones missed due to server downtime or failed BullMQ jobs
+ *   - Uses ReminderLog for idempotent dedup — each milestone fires exactly once
  *
- * Sends an overdue reminder email to the client and updates lastReminderSentAt.
+ * The PRIMARY mechanism is BullMQ delayed jobs scheduled at invoice send time.
+ * This cron is purely a safety net / backfill sweep.
  *
- * Safety: lastReminderSentAt ensures one reminder per 24-hour window max.
+ * Milestones checked (relative to invoice dueDate):
+ *   before_due_3days → dueDate − 3 days
+ *   on_due_date      → dueDate
+ *   after_due_3days  → dueDate + 3 days
+ *   after_due_7days  → dueDate + 7 days
+ *   after_due_14days → dueDate + 14 days
+ *   after_due_30days → dueDate + 30 days
  */
 
-const cron = require('node-cron');
+const cron    = require('node-cron');
 const Invoice = require('../models/Invoice.model');
-const Company = require('../models/Company.model');
-const { sendEmail } = require('../services/email.service');
-const overdueReminderTemplate = require('../templates/emails/overdueReminder.template');
-const { EMAIL_FROM_NAME, EMAIL_FROM_ADDRESS } = require('../config/env');
-const logger = require('../utils/logger');
+const ReminderLog = require('../models/ReminderLog.model');
+const { scheduleReminder } = require('../config/queue');
+const logger  = require('../utils/logger');
 
-const SKIP_STATUSES = ['paid', 'cancelled', 'draft'];
-const MIN_OVERDUE_DAYS = 1;           // must be at least this many days past due
-const REMINDER_COOLDOWN_HOURS = 24;   // don't re-remind within this window
+// Milliseconds per day
+const DAY_MS = 86_400_000;
+
+// Each milestone: type string + how many days from dueDate (negative = before)
+const MILESTONES = [
+  { type: 'before_due_3days', offsetDays: -3 },
+  { type: 'on_due_date',      offsetDays:  0 },
+  { type: 'after_due_3days',  offsetDays:  3 },
+  { type: 'after_due_7days',  offsetDays:  7 },
+  { type: 'after_due_14days', offsetDays: 14 },
+  { type: 'after_due_30days', offsetDays: 30 },
+];
+
+const SKIP_STATUSES = ['paid', 'cancelled'];
+
+// Tolerance window: consider a milestone "due" if it fell within the past N hours.
+// 36 hours catches a missed previous day's run without double-firing on the same day.
+const WINDOW_HOURS = 36;
 
 /**
- * Core logic — exported so it can be called directly in tests or on-demand.
+ * Core sweep — exported for tests and on-demand execution.
  */
 const runOverdueReminders = async () => {
-  logger.info('[overdue-cron] Starting overdue invoice reminder run...');
+  logger.info('[reminder-cron] Starting daily milestone sweep...');
 
   const now = new Date();
+  let queued  = 0;
+  let skipped = 0;
 
-  // dueDate threshold: invoices due before (now - MIN_OVERDUE_DAYS days)
-  const overdueCutoff = new Date(now);
-  overdueCutoff.setDate(overdueCutoff.getDate() - MIN_OVERDUE_DAYS);
+  for (const { type, offsetDays } of MILESTONES) {
+    // Milestone fires at: dueDate + offsetDays
+    // We consider it "due today" when: (dueDate + offsetDays) is in (now - WINDOW_HOURS, now]
+    // Rearranging for dueDate: dueDate is in (now - WINDOW_HOURS - offsetDays days, now - offsetDays days]
+    const windowMs   = WINDOW_HOURS * 3_600_000;
+    const offsetMs   = offsetDays * DAY_MS;
+    const dueDateFrom = new Date(now.getTime() - windowMs - offsetMs);
+    const dueDateTo   = new Date(now.getTime()             - offsetMs);
 
-  // lastReminderSentAt threshold: skip if reminded within REMINDER_COOLDOWN_HOURS
-  const cooldownCutoff = new Date(now);
-  cooldownCutoff.setHours(cooldownCutoff.getHours() - REMINDER_COOLDOWN_HOURS);
+    const invoices = await Invoice.find({
+      status:          { $nin: SKIP_STATUSES },
+      reminderEnabled: { $ne: false },
+      dueDate:         { $gte: dueDateFrom, $lte: dueDateTo },
+      recipientEmail:  { $exists: true, $ne: '' },
+    }).select('_id company').lean();
 
-  const invoices = await Invoice.find({
-    status:    { $nin: SKIP_STATUSES },
-    dueDate:   { $lt: overdueCutoff },
-    recipientEmail: { $exists: true, $ne: '' },
-    $or: [
-      { lastReminderSentAt: { $exists: false } },
-      { lastReminderSentAt: null },
-      { lastReminderSentAt: { $lt: cooldownCutoff } },
-    ],
-  })
-    .populate('client', 'clientName')
-    .lean();
+    if (invoices.length === 0) continue;
 
-  logger.info(`[overdue-cron] Found ${invoices.length} overdue invoice(s) to remind.`);
+    // Bulk-fetch already-sent ReminderLog entries for this milestone to avoid N+1 queries
+    const invoiceIds = invoices.map((i) => i._id);
+    const sentLogs   = await ReminderLog.find({
+      invoice:      { $in: invoiceIds },
+      reminderType: type,
+      status:       'sent',
+    }).select('invoice').lean();
+    const sentSet = new Set(sentLogs.map((l) => l.invoice.toString()));
 
-  let sent = 0;
-  let failed = 0;
+    for (const invoice of invoices) {
+      const id = invoice._id.toString();
+      if (sentSet.has(id)) {
+        skipped++;
+        continue;
+      }
 
-  for (const invoice of invoices) {
-    try {
-      const dueDate = new Date(invoice.dueDate);
-      const daysOverdue = Math.floor((now - dueDate) / 86_400_000);
-
-      const clientName  = invoice.client?.clientName || invoice.recipientDetails?.name || 'Valued Client';
-      const companyName = invoice.senderDetails?.name || 'Your Service Provider';
-      const currency    = invoice.currency || 'INR';
-
-      const html = overdueReminderTemplate({
-        clientName,
-        invoiceNumber: invoice.invoiceNumber,
-        dueDate:       invoice.dueDate,
-        balanceDue:    invoice.balanceDue ?? invoice.grandTotal,
-        currency,
-        daysOverdue,
-        companyName,
-      });
-
-      await sendEmail({
-        to:        invoice.recipientEmail,
-        from:      `"${EMAIL_FROM_NAME}" <${EMAIL_FROM_ADDRESS}>`,
-        subject:   `Payment Reminder: Invoice ${invoice.invoiceNumber} is ${daysOverdue} day${daysOverdue !== 1 ? 's' : ''} overdue`,
-        html,
-        type:      'overdue_reminder',
-        companyId: invoice.company?.toString(),
-        invoiceId: invoice._id?.toString(),
-      });
-
-      // Update lastReminderSentAt + bump counter (use updateOne to avoid triggering full save hooks)
-      await Invoice.updateOne(
-        { _id: invoice._id },
-        {
-          lastReminderSentAt: now,
-          $inc: { reminderCount: 1 },
-        },
+      // Queue immediately (delay: 0) — milestone is already due
+      await scheduleReminder(
+        { invoiceId: id, reminderType: type, companyId: invoice.company?.toString() },
+        0,
       );
-
-      logger.info(`[overdue-cron] ✓ Reminder sent for ${invoice.invoiceNumber} (${daysOverdue}d overdue) → ${invoice.recipientEmail}`);
-      sent++;
-    } catch (err) {
-      logger.error(`[overdue-cron] ✗ Failed to send reminder for ${invoice.invoiceNumber}: ${err.message}`);
-      failed++;
+      queued++;
+      logger.info(`[reminder-cron] Queued ${type} for invoice ${id}`);
     }
   }
 
-  logger.info(`[overdue-cron] Run complete. Sent: ${sent}, Failed: ${failed}, Skipped: ${invoices.length - sent - failed}`);
+  logger.info(`[reminder-cron] Sweep complete — queued: ${queued}, already-sent skipped: ${skipped}`);
 };
 
 /**
- * Schedule the cron — call this once at server startup.
- * Schedule: every day at 09:00 AM.
+ * Schedule the cron — call once at server startup.
+ * Also runs one immediate sweep so invoices that became overdue while the
+ * server was down (or were sent outside the 09:00 window) are caught right away.
  */
 const startOverdueCron = () => {
   cron.schedule('0 9 * * *', async () => {
     try {
       await runOverdueReminders();
     } catch (err) {
-      logger.error('[overdue-cron] Unhandled error in cron run:', err.message);
+      logger.error('[reminder-cron] Unhandled error in cron run:', err.message);
     }
   });
 
-  logger.info('[overdue-cron] Overdue reminder cron scheduled — runs daily at 09:00.');
+  // Startup sweep — runs once after a short delay to let DB connections settle.
+  // This covers the gap between the last 09:00 run and server restart.
+  setTimeout(async () => {
+    try {
+      logger.info('[reminder-cron] Running startup catch-up sweep...');
+      await runOverdueReminders();
+    } catch (err) {
+      logger.error('[reminder-cron] Startup sweep error:', err.message);
+    }
+  }, 5_000);
+
+  logger.info('[reminder-cron] Reminder cron scheduled — daily at 09:00 + startup sweep in 5s.');
 };
 
 module.exports = { startOverdueCron, runOverdueReminders };

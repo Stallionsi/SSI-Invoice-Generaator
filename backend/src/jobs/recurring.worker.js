@@ -1,23 +1,25 @@
 /**
  * Recurring Invoice Worker
- * Runs via BullMQ Scheduler or a cron trigger.
- * Each day, finds all recurring invoices due for generation and creates new ones.
+ * Finds all recurring invoices due for generation and creates new ones.
+ * Self-schedules: queues the next run 24 hours after each completion.
  *
- * Run: node src/jobs/recurring.worker.js
+ * Standalone : node src/jobs/recurring.worker.js
+ * Combined   : imported by src/jobs/worker.js
  */
 
 require('dotenv').config();
 
 const { Worker, Queue } = require('bullmq');
 const { getRedisConnection } = require('../config/redis');
-const connectDB = require('../config/db');
-const Invoice = require('../models/Invoice.model');
-const invoiceService = require('../services/invoice.service');
-const logger = require('../utils/logger');
-const dayjs = require('dayjs');
+const connectDB       = require('../config/db');
+const Invoice         = require('../models/Invoice.model');
+const invoiceService  = require('../services/invoice.service');
+const logger          = require('../utils/logger');
+const dayjs           = require('dayjs');
 
+// ─── Job processor ───────────────────────────────────────────────────────────
 const processDueRecurring = async (job) => {
-  logger.info('[recurring-worker] Checking for due recurring invoices...');
+  logger.info('[recurring-worker] ► Checking for due recurring invoices...');
   const today = dayjs().startOf('day').toDate();
 
   const dueInvoices = await Invoice.find({
@@ -41,24 +43,23 @@ const processDueRecurring = async (job) => {
   let generated = 0;
   for (const source of dueInvoices) {
     try {
-      // Create new invoice from template
       const newInvoice = await invoiceService.duplicate(
         source._id,
         source.company.toString(),
         source.createdBy?.toString()
       );
 
-      // Calculate next invoice date based on frequency
-      const nextDate = calculateNextDate(source.recurringSettings.nextInvoiceDate || today, source.recurringSettings.frequency);
+      const nextDate = calculateNextDate(
+        source.recurringSettings.nextInvoiceDate || today,
+        source.recurringSettings.frequency
+      );
 
-      // Update parent: increment cycles, set next date
       await Invoice.findByIdAndUpdate(source._id, {
         'recurringSettings.nextInvoiceDate': nextDate,
         'recurringSettings.lastGeneratedAt': new Date(),
         $inc: { 'recurringSettings.completedCycles': 1 },
       });
 
-      // Auto-send if the template was in 'sent' state
       if (source.status === 'sent' && source.recipientEmail) {
         await invoiceService.sendInvoiceEmail(
           newInvoice._id.toString(),
@@ -69,9 +70,11 @@ const processDueRecurring = async (job) => {
       }
 
       generated++;
-      logger.info(`[recurring-worker] Generated recurring invoice: ${newInvoice.invoiceNumber}`);
+      logger.info(`[recurring-worker] ✓ Generated recurring invoice: ${newInvoice.invoiceNumber}`);
     } catch (err) {
-      logger.error(`[recurring-worker] Failed to generate recurring invoice from ${source._id}:`, err.message);
+      logger.error(
+        `[recurring-worker] ✗ Failed to generate from ${source._id}: ${err.message}`
+      );
     }
   }
 
@@ -89,35 +92,66 @@ const calculateNextDate = (currentDate, frequency) => {
   }
 };
 
+// ─── Worker factory ───────────────────────────────────────────────────────────
 const startWorker = async () => {
   await connectDB();
 
   const worker = new Worker('recurring', processDueRecurring, {
-    connection: getRedisConnection(),
+    connection:  getRedisConnection(),
     concurrency: 1,
   });
 
-  worker.on('completed', (job, result) => {
-    logger.info(`[recurring-worker] ✓ Done. Generated: ${result?.generated} of ${result?.processed}`);
+  worker.on('completed', async (job, result) => {
+    logger.info(
+      `[recurring-worker] ✓ Done — generated ${result?.generated} of ${result?.processed}`
+    );
+    // Self-schedule: queue next run for tomorrow
+    try {
+      const recurringQueue = new Queue('recurring', { connection: getRedisConnection() });
+      await recurringQueue.add('process-recurring', {}, {
+        delay: 24 * 60 * 60 * 1000,
+        jobId: `recurring-daily-${dayjs().add(1, 'day').format('YYYY-MM-DD')}`,
+      });
+    } catch (err) {
+      logger.error(`[recurring-worker] Failed to self-schedule next run: ${err.message}`);
+    }
   });
 
   worker.on('failed', (job, err) => {
-    logger.error(`[recurring-worker] ✗ Failed [${job?.id}]:`, err.message);
+    const remaining = Math.max(0, (job?.opts?.attempts ?? 1) - (job?.attemptsMade ?? 0) - 1);
+    logger.error(
+      `[recurring-worker] ✗ Failed [${job?.id}] | ${err.message} | retries left: ${remaining}`
+    );
   });
 
-  // Self-schedule: add next day's job when this one completes
-  worker.on('completed', async () => {
-    const recurringQueue = new Queue('recurring', { connection: getRedisConnection() });
-    await recurringQueue.add('process-recurring', {}, {
-      delay: 24 * 60 * 60 * 1000,  // run again in 24 hours
-      jobId: `recurring-daily-${dayjs().add(1, 'day').format('YYYY-MM-DD')}`,
-    });
+  worker.on('stalled', (jobId) => {
+    logger.warn(`[recurring-worker] ⚠ Job stalled [${jobId}]`);
   });
 
-  logger.info('[recurring-worker] Recurring invoice worker started.');
+  worker.on('error', (err) => {
+    logger.error(`[recurring-worker] Worker-level error: ${err.message}`);
+  });
+
+  logger.info('[recurring-worker] ✓ Started — listening on queue "recurring"');
+  return worker;
 };
 
-startWorker().catch((err) => {
-  logger.error('[recurring-worker] Failed to start:', err);
-  process.exit(1);
-});
+// ─── Standalone entry point ───────────────────────────────────────────────────
+if (require.main === module) {
+  startWorker()
+    .then((worker) => {
+      const shutdown = async (signal) => {
+        logger.info(`[recurring-worker] ${signal} received — closing gracefully...`);
+        await worker.close();
+        process.exit(0);
+      };
+      process.on('SIGTERM', () => shutdown('SIGTERM'));
+      process.on('SIGINT',  () => shutdown('SIGINT'));
+    })
+    .catch((err) => {
+      logger.error('[recurring-worker] Failed to start:', err.message);
+      process.exit(1);
+    });
+}
+
+module.exports = { startWorker };

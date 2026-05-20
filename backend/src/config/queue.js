@@ -85,6 +85,39 @@ const addWebhookJob = async (event, data, companyId) => {
   return job;
 };
 
+// ─── Helper: Cancel a single scheduled reminder ───────────────────────────
+const ALL_REMINDER_TYPES = [
+  'before_due_3days',
+  'on_due_date',
+  'after_due_3days',
+  'after_due_7days',
+  'after_due_14days',
+  'after_due_30days',
+];
+
+const cancelReminder = async (invoiceId, reminderType) => {
+  const jobId = `reminder-${invoiceId}-${reminderType}`;
+  try {
+    const job = await reminderQueue.getJob(jobId);
+    if (job) {
+      const state = await job.getState();
+      if (state === 'delayed' || state === 'waiting') {
+        await job.remove();
+        logger.debug(`Reminder cancelled: ${jobId}`);
+      }
+    }
+  } catch (err) {
+    // Non-fatal — job may have already fired or been removed
+    logger.warn(`Could not cancel reminder ${jobId}: ${err.message}`);
+  }
+};
+
+// ─── Helper: Cancel ALL pending reminders for an invoice ─────────────────
+const cancelAllReminders = async (invoiceId) => {
+  await Promise.all(ALL_REMINDER_TYPES.map((type) => cancelReminder(invoiceId, type)));
+  logger.debug(`All pending reminders cancelled for invoice ${invoiceId}`);
+};
+
 module.exports = {
   emailQueue,
   pdfQueue,
@@ -94,5 +127,7 @@ module.exports = {
   addEmailJob,
   addPdfJob,
   scheduleReminder,
+  cancelReminder,
+  cancelAllReminders,
   addWebhookJob,
 };

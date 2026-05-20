@@ -5,9 +5,10 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
-import { ArrowLeft } from 'lucide-react';
-import { getInvoice, updateInvoice } from '../api/invoices.api';
+import { ArrowLeft, Pencil, CheckCircle } from 'lucide-react';
+import { getInvoice, updateInvoice, markInvoiceSent } from '../api/invoices.api';
 import { getClients, getClient } from '../api/clients.api';
+import EditClientModal from '../components/client/EditClientModal';
 import { useAuthStore } from '../store/authStore';
 import LineItemEditor from '../components/invoice/LineItemEditor';
 import InvoiceTotals from '../components/invoice/InvoiceTotals';
@@ -118,6 +119,9 @@ export default function EditInvoice() {
   const visibility    = evaluateVisibility(customFields);
   const handleCustomFieldChange = (key, value) =>
     setCustomFields((prev) => ({ ...prev, [key]: value }));
+
+  // ── Edit-client modal ──────────────────────────────────────────────────────
+  const [editClientOpen, setEditClientOpen] = useState(false);
 
   // ── Project section toggle ─────────────────────────────────────────────────
   const [showProject, setShowProject] = useState(false);
@@ -253,6 +257,17 @@ export default function EditInvoice() {
     onError: (e) => toast.error(e.response?.data?.message || 'Failed to update invoice'),
   });
 
+  // ── Mark as Sent ────────────────────────────────────────────────────────────
+  const { mutate: doMarkSent, isPending: markingAsSent } = useMutation({
+    mutationFn: () => markInvoiceSent(id),
+    onSuccess: () => {
+      toast.success('Invoice marked as sent — reminders activated!');
+      qc.invalidateQueries({ queryKey: ['invoice', id] });
+      qc.invalidateQueries({ queryKey: ['invoices'] });
+    },
+    onError: (e) => toast.error(e.response?.data?.message || 'Failed to mark as sent'),
+  });
+
   const onSubmit = (formData) => {
     const proj = formData.project || {};
     const cleanedProject = {
@@ -297,12 +312,25 @@ export default function EditInvoice() {
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div>
               <label className="label">Client *</label>
-              <select {...register('client')} className="input">
-                <option value="">Select client…</option>
-                {clients.map((c) => (
-                  <option key={c._id} value={c._id}>{c.clientName}</option>
-                ))}
-              </select>
+              <div className="flex items-center gap-2">
+                <select {...register('client')} className="input flex-1">
+                  <option value="">Select client…</option>
+                  {clients.map((c) => (
+                    <option key={c._id} value={c._id}>{c.clientName}</option>
+                  ))}
+                </select>
+                {watchedClient && (
+                  <button
+                    type="button"
+                    onClick={() => setEditClientOpen(true)}
+                    title="Edit client details"
+                    className="flex-shrink-0 flex items-center gap-1.5 px-3 h-9 text-xs font-semibold rounded-lg border border-dashed border-amber-300 text-amber-600 hover:bg-amber-50 transition-colors whitespace-nowrap"
+                  >
+                    <Pencil className="w-3.5 h-3.5" />
+                    <span>Edit</span>
+                  </button>
+                )}
+              </div>
               {errors.client && <p className="text-red-500 text-xs mt-1">{errors.client.message}</p>}
             </div>
 
@@ -487,15 +515,39 @@ export default function EditInvoice() {
         </div>
 
         {/* ── Actions ── */}
-        <div className="flex justify-end gap-3">
-          <button type="button" className="btn btn-secondary" onClick={() => navigate(-1)}>
-            Cancel
-          </button>
-          <button type="submit" className="btn-primary" disabled={isPending}>
-            {isPending ? <Spinner /> : 'Save Changes'}
-          </button>
+        <div className="flex justify-between items-center">
+          {/* Mark as Sent — only shown for draft invoices */}
+          {inv.status === 'draft' ? (
+            <button
+              type="button"
+              onClick={() => doMarkSent()}
+              disabled={markingAsSent}
+              className="flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg border border-dashed border-green-400 text-green-700 hover:bg-green-50 transition-colors disabled:opacity-50"
+            >
+              {markingAsSent ? <Spinner /> : <CheckCircle className="w-4 h-4" />}
+              Mark as Sent
+            </button>
+          ) : (
+            <span className="text-xs text-gray-400 capitalize">Status: {inv.status}</span>
+          )}
+
+          <div className="flex gap-3">
+            <button type="button" className="btn btn-secondary" onClick={() => navigate(-1)}>
+              Cancel
+            </button>
+            <button type="submit" className="btn-primary" disabled={isPending}>
+              {isPending ? <Spinner /> : 'Save Changes'}
+            </button>
+          </div>
         </div>
       </form>
+
+      <EditClientModal
+        clientId={watchedClient}
+        open={editClientOpen}
+        onClose={() => setEditClientOpen(false)}
+        onUpdated={() => qc.invalidateQueries({ queryKey: ['client', activeId, watchedClient] })}
+      />
     </div>
   );
 }

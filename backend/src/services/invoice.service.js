@@ -7,7 +7,7 @@ const { generateInvoicePdf } = require('./pdf.service');
 const { calculateLineItem, calculateInvoiceTotals, calculateDueDate } = require('../utils/calculation.util');
 const { reserveNextInvoiceNumber } = require('../utils/invoiceNumber.util');
 const { parsePagination, buildPaginationMeta, parseInvoiceFilters } = require('../utils/pagination.util');
-const { addPdfJob, scheduleReminder, addWebhookJob } = require('../config/queue');
+const { addPdfJob, scheduleReminder, cancelAllReminders, addWebhookJob } = require('../config/queue');
 const emailService = require('./email.service');
 const { getExchangeRate } = require('./exchangeRate.service');
 const { DEFAULT_CURRENCY } = require('../config/env');
@@ -195,8 +195,11 @@ const create = async (data, companyId, userId) => {
     }, companyId);
   } catch (e) { logger.error(`addWebhookJob failed for ${invoice.invoiceNumber}: ${e.message}`); }
 
-  // Email is NOT sent here. It is sent only when the user explicitly clicks
-  // "Send" on the invoice detail page (POST /invoices/:id/send).
+  // Schedule reminders immediately on creation — fires regardless of status so
+  // even draft invoices get reminders once their dueDate arrives.
+  try { await schedulePaymentReminders(invoice); }
+  catch (e) { logger.error(`schedulePaymentReminders failed for ${invoice.invoiceNumber}: ${e.message}`); }
+
   return invoice;
 };
 
@@ -236,6 +239,10 @@ const update = async (invoiceId, companyId, data) => {
     throw Object.assign(new Error('Cannot edit a paid invoice'), { statusCode: 400 });
   }
 
+  // Snapshot fields that affect reminder scheduling before mutating
+  const prevDueDate        = invoice.dueDate?.toISOString();
+  const prevReminderEnabled = invoice.reminderEnabled;
+
   // Recalculate if line items are provided
   if (data.lineItems) {
     const currency  = data.currency || invoice.currency || DEFAULT_CURRENCY;
@@ -261,6 +268,33 @@ const update = async (invoiceId, companyId, data) => {
   // Regenerate PDF on update
   await generateInvoicePdf(invoice._id);
 
+  // Reschedule reminders when dueDate changed or reminders re-enabled on a sent invoice
+  const newDueDate         = invoice.dueDate?.toISOString();
+  const reminderNowEnabled = invoice.reminderEnabled;
+  const dueDateChanged     = data.dueDate !== undefined && newDueDate !== prevDueDate;
+  const reminderTurnedOff  = prevReminderEnabled && !reminderNowEnabled;
+  const reminderTurnedOn   = !prevReminderEnabled && reminderNowEnabled;
+
+  // Statuses that are still "in flight" and should receive reminders.
+  // 'overdue' is included because the pre-save hook promotes 'sent' → 'overdue'
+  // the moment dueDate passes — we must still reschedule when dueDate changes.
+  const REMINDER_ACTIVE_STATUSES = ['sent', 'viewed', 'overdue', 'partial'];
+
+  if (reminderTurnedOff) {
+    await cancelAllReminders(invoice._id.toString());
+  } else if (
+    (dueDateChanged || reminderTurnedOn) &&
+    REMINDER_ACTIVE_STATUSES.includes(invoice.status) &&
+    invoice.reminderEnabled
+  ) {
+    logger.info(
+      `[invoice.update] Rescheduling reminders for ${invoice._id} — ` +
+      `dueDateChanged=${dueDateChanged} reminderTurnedOn=${reminderTurnedOn} status=${invoice.status}`
+    );
+    await cancelAllReminders(invoice._id.toString());
+    await schedulePaymentReminders(invoice);
+  }
+
   return invoice;
 };
 
@@ -268,6 +302,10 @@ const update = async (invoiceId, companyId, data) => {
 const cancel = async (invoiceId, companyId) => {
   const invoice = await Invoice.findOneAndDelete({ _id: invoiceId, company: companyId });
   if (!invoice) throw Object.assign(new Error('Invoice not found'), { statusCode: 404 });
+
+  // Tear down any delayed BullMQ reminder jobs so they don't fire on a deleted invoice
+  try { await cancelAllReminders(invoiceId.toString()); } catch { /* non-fatal */ }
+
   return invoice;
 };
 
@@ -335,8 +373,16 @@ const sendInvoiceEmail = async (invoiceId, companyId, emailData, userId) => {
     });
   }
 
+  // Refetch after the status update so schedulePaymentReminders sees the correct
+  // 'sent' status — freshInvoice was fetched before the update above.
+  const invoiceForReminders = await Invoice.findById(invoiceId).lean();
+
+  // Cancel any existing reminder jobs before scheduling fresh ones.
+  // Without this, BullMQ's jobId dedup silently blocks rescheduling on resend.
+  await cancelAllReminders(invoiceId.toString());
+
   // Schedule payment reminders
-  await schedulePaymentReminders(freshInvoice);
+  await schedulePaymentReminders(invoiceForReminders);
 
   // Emit webhook event
   try {
@@ -349,13 +395,25 @@ const sendInvoiceEmail = async (invoiceId, companyId, emailData, userId) => {
 };
 
 // ─── Schedule Reminders ────────────────────────────────────────────────────
+// Catch-up window: milestones up to 36 h in the past are queued immediately.
+// Milestones older than that are left to the daily cron safety-net sweep.
+const REMINDER_CATCHUP_MS = 36 * 60 * 60 * 1000; // 36 h
+
 const schedulePaymentReminders = async (invoice) => {
-  if (!invoice.reminderEnabled || !invoice.dueDate) return;
+  if (!invoice.reminderEnabled || !invoice.dueDate) {
+    logger.info(
+      `[schedulePaymentReminders] Skipped invoice ${invoice._id} — ` +
+      `reminderEnabled=${invoice.reminderEnabled} dueDate=${invoice.dueDate}`
+    );
+    return;
+  }
 
-  const dueDate = dayjs(invoice.dueDate);
-  const now     = dayjs();
+  const invoiceId = invoice._id.toString();
+  const companyId = invoice.company?.toString?.() ?? invoice.company;
+  const dueDate   = dayjs(invoice.dueDate);
+  const now       = dayjs();
 
-  const reminders = [
+  const milestones = [
     { type: 'before_due_3days', date: dueDate.subtract(3, 'day') },
     { type: 'on_due_date',      date: dueDate },
     { type: 'after_due_3days',  date: dueDate.add(3, 'day') },
@@ -364,15 +422,58 @@ const schedulePaymentReminders = async (invoice) => {
     { type: 'after_due_30days', date: dueDate.add(30, 'day') },
   ];
 
-  for (const { type, date } of reminders) {
-    if (date.isAfter(now)) {
-      const delay = date.diff(now, 'millisecond');
-      await scheduleReminder(
-        { invoiceId: invoice._id.toString(), reminderType: type, companyId: invoice.company?.toString() },
-        delay
-      );
+  logger.info(
+    `[schedulePaymentReminders] Invoice ${invoiceId} — dueDate=${invoice.dueDate}, ` +
+    `evaluating ${milestones.length} milestones`
+  );
+
+  for (const { type, date } of milestones) {
+    const diffMs = date.diff(now, 'millisecond');
+
+    if (diffMs > 0) {
+      // Future milestone — delayed job
+      const delaySec = Math.round(diffMs / 1000);
+      logger.info(`[schedulePaymentReminders]   ${type}: future in ${delaySec}s — scheduling delayed job`);
+      await scheduleReminder({ invoiceId, reminderType: type, companyId }, diffMs);
+
+    } else if (diffMs >= -REMINDER_CATCHUP_MS) {
+      // Recent past (within 36 h) — queue immediately so the worker fires now
+      const agoMin = Math.round(-diffMs / 60_000);
+      logger.info(`[schedulePaymentReminders]   ${type}: ${agoMin}m in the past (within catch-up window) — scheduling immediately`);
+      await scheduleReminder({ invoiceId, reminderType: type, companyId }, 0);
+
+    } else {
+      // Older than 36 h — let the daily cron handle it if it hasn't already
+      const agoH = Math.round(-diffMs / 3_600_000);
+      logger.info(`[schedulePaymentReminders]   ${type}: ${agoH}h in the past — too old for immediate catch-up, cron will handle`);
     }
   }
+};
+
+// ─── Mark as Sent (no email) ──────────────────────────────────────────────
+// Transitions a draft invoice to 'sent' without sending an email.
+// Useful when the invoice was delivered outside the app (WhatsApp, PDF, etc.)
+// and you just want the reminder system to activate.
+const markAsSent = async (invoiceId, companyId) => {
+  const invoice = await Invoice.findOneAndUpdate(
+    { _id: invoiceId, company: companyId, status: 'draft' },
+    { status: 'sent', isSent: true },
+    { new: true }
+  );
+  if (!invoice) {
+    // Either not found OR already non-draft (idempotent — not an error)
+    const existing = await Invoice.findOne({ _id: invoiceId, company: companyId }).lean();
+    if (!existing) throw Object.assign(new Error('Invoice not found'), { statusCode: 404 });
+    // Already sent/overdue/etc. — schedule reminders anyway in case they were never set up
+    await cancelAllReminders(invoiceId.toString());
+    await schedulePaymentReminders(existing);
+    return existing;
+  }
+
+  // Fresh send — cancel any stale jobs then schedule
+  await cancelAllReminders(invoiceId.toString());
+  await schedulePaymentReminders(invoice);
+  return invoice;
 };
 
 // ─── Duplicate Invoice ────────────────────────────────────────────────────
@@ -432,4 +533,4 @@ const markViewed = async (viewToken) => {
   );
 };
 
-module.exports = { create, list, getById, update, cancel, sendInvoiceEmail, duplicate, createCreditNote, markViewed, schedulePaymentReminders };
+module.exports = { create, list, getById, update, cancel, sendInvoiceEmail, markAsSent, duplicate, createCreditNote, markViewed, schedulePaymentReminders };

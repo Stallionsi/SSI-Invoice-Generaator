@@ -5,7 +5,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
-import { ArrowLeft, Building2 } from 'lucide-react';
+import { ArrowLeft, Building2, UserPlus } from 'lucide-react';
 import { createInvoice, getNextInvoiceNumber } from '../api/invoices.api';
 import { getClients, getClient } from '../api/clients.api';
 import LineItemEditor from '../components/invoice/LineItemEditor';
@@ -15,6 +15,7 @@ import Spinner from '../components/ui/Spinner';
 import { calcInvoiceTotals } from '../utils/calculations';
 import SimpleCustomFields from '../components/customFields/SimpleCustomFields';
 import { useActiveCompany } from '../hooks/useActiveCompany';
+import AddClientModal from '../components/client/AddClientModal';
 
 // ─── Zod schemas ───────────────────────────────────────────────────────────────
 const itemSchema = z.object({
@@ -136,6 +137,13 @@ export default function CreateInvoice() {
   const [customFields, setCustomFields] = useState({});
   const handleCustomFieldChange = (key, value) =>
     setCustomFields((prev) => ({ ...prev, [key]: value }));
+
+  // ── Add-client modal ───────────────────────────────────────────────────────
+  const [addClientOpen, setAddClientOpen] = useState(false);
+
+  const handleClientCreated = (newClient) => {
+    if (newClient?._id) setValue('client', newClient._id, { shouldDirty: true });
+  };
 
   // ── Project section toggle ─────────────────────────────────────────────────
   const [showProject, setShowProject] = useState(false);
@@ -347,12 +355,23 @@ export default function CreateInvoice() {
 
             <div>
               <label className="label">Client *</label>
-              <select {...register('client')} className="input">
-                <option value="">Select client…</option>
-                {clients.map((c) => (
-                  <option key={c._id} value={c._id}>{c.clientName}</option>
-                ))}
-              </select>
+              <div className="flex items-center gap-2">
+                <select {...register('client')} className="input flex-1">
+                  <option value="">Select client…</option>
+                  {clients.map((c) => (
+                    <option key={c._id} value={c._id}>{c.clientName}</option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  onClick={() => setAddClientOpen(true)}
+                  title="Add new client"
+                  className="flex-shrink-0 flex items-center gap-1.5 px-3 h-9 text-xs font-semibold rounded-lg border border-dashed border-indigo-300 text-indigo-600 hover:bg-indigo-50 transition-colors whitespace-nowrap"
+                >
+                  <UserPlus className="w-3.5 h-3.5" />
+                  <span>New</span>
+                </button>
+              </div>
               {errors.client && <p className="text-red-500 text-xs mt-1">{errors.client.message}</p>}
             </div>
 
@@ -548,6 +567,12 @@ export default function CreateInvoice() {
           </button>
         </div>
       </form>
+
+      <AddClientModal
+        open={addClientOpen}
+        onClose={() => setAddClientOpen(false)}
+        onCreated={handleClientCreated}
+      />
     </div>
   );
 }

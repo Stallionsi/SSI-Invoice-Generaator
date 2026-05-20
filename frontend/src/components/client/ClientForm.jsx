@@ -172,7 +172,7 @@ function AddressFields({ prefix, register, country, showCountry = false }) {
 }
 
 // ─── Main form ─────────────────────────────────────────────────────────────────
-export default function ClientForm({ defaultValues, onSubmit, isLoading }) {
+export default function ClientForm({ defaultValues, onSubmit, isLoading, submitLabel = 'Save Client' }) {
   const {
     register,
     handleSubmit,
@@ -307,7 +307,7 @@ export default function ClientForm({ defaultValues, onSubmit, isLoading }) {
 
       <div className="flex justify-end pt-2">
         <button type="submit" className="btn-primary" disabled={isLoading}>
-          {isLoading ? <Spinner /> : 'Save Client'}
+          {isLoading ? <Spinner /> : submitLabel}
         </button>
       </div>
     </form>

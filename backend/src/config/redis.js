@@ -4,49 +4,62 @@ const logger = require('../utils/logger');
 
 let redisClient = null;
 
+// Options applied to every ioredis instance used by BullMQ.
+// maxRetriesPerRequest: null is REQUIRED — BullMQ throws if it's anything else.
+// enableReadyCheck: false prevents BullMQ from stalling on Redis startup.
+const BULLMQ_OPTS = {
+  maxRetriesPerRequest: null,
+  enableReadyCheck:     false,
+  retryStrategy: (times) => Math.min(times * 500, 5_000),
+};
+
 /**
- * Returns a singleton Redis client.
- * BullMQ requires separate connection instances — use getRedisConnection() for queues.
+ * Singleton Redis client for general app use (caching, rate limiting, etc).
+ * NOT used by BullMQ directly — BullMQ calls getRedisConnection() instead.
  */
 const getRedisClient = () => {
   if (redisClient) return redisClient;
 
-  const options = REDIS_URL
-    ? REDIS_URL
-    : {
-        host: REDIS_HOST,
-        port: REDIS_PORT,
-        password: REDIS_PASSWORD || undefined,
-        maxRetriesPerRequest: null,   // required by BullMQ
-        retryStrategy: (times) => Math.min(times * 50, 2000),
+  redisClient = REDIS_URL
+    ? new Redis(REDIS_URL, {
+        maxRetriesPerRequest: null,
+        retryStrategy: (times) => Math.min(times * 50, 2_000),
         lazyConnect: false,
-      };
-
-  redisClient = new Redis(options);
+      })
+    : new Redis({
+        host:                 REDIS_HOST,
+        port:                 REDIS_PORT,
+        password:             REDIS_PASSWORD || undefined,
+        maxRetriesPerRequest: null,
+        retryStrategy:        (times) => Math.min(times * 50, 2_000),
+        lazyConnect:          false,
+      });
 
   redisClient.on('connect', () => logger.info('Redis connected'));
-  redisClient.on('error', (err) => logger.error('Redis error:', err.message));
-  redisClient.on('close', () => logger.warn('Redis connection closed'));
+  redisClient.on('error',   (err) => logger.error('Redis error:', err.message));
+  redisClient.on('close',   () => logger.warn('Redis connection closed'));
 
   return redisClient;
 };
 
 /**
- * BullMQ needs its own connection (not shared with app cache).
- * Call this whenever creating a Queue or Worker.
+ * Creates a FRESH ioredis connection for BullMQ.
+ * BullMQ requires each Queue and Worker to own its own connection —
+ * they must NOT share a single client.
+ *
+ * The critical requirement: maxRetriesPerRequest MUST be null.
+ * When REDIS_URL is a plain string, new Redis(url) uses the ioredis default (20).
+ * We always pass it as new Redis(url, opts) or new Redis(opts) to enforce null.
  */
 const getRedisConnection = () => {
-  const options = REDIS_URL
-    ? REDIS_URL
-    : {
-        host: REDIS_HOST,
-        port: REDIS_PORT,
+  return REDIS_URL
+    ? new Redis(REDIS_URL, BULLMQ_OPTS)
+    : new Redis({
+        host:     REDIS_HOST,
+        port:     REDIS_PORT,
         password: REDIS_PASSWORD || undefined,
-        maxRetriesPerRequest: null,
-        enableReadyCheck: false,
-      };
-
-  return new Redis(options);
+        ...BULLMQ_OPTS,
+      });
 };
 
 module.exports = { getRedisClient, getRedisConnection };

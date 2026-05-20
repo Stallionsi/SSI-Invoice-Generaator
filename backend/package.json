@@ -9,11 +9,18 @@
   "scripts": {
     "start": "node server.js",
     "dev": "nodemon server.js",
+    "workers": "node src/jobs/worker.js",
+    "dev:workers": "nodemon --watch src/jobs --watch src/services --watch src/models src/jobs/worker.js",
+    "dev:all": "concurrently --names api,workers --prefix-colors cyan,magenta \"npm run dev\" \"npm run dev:workers\"",
     "worker:email": "node src/jobs/email.worker.js",
     "worker:pdf": "node --max-old-space-size=512 src/jobs/pdf.worker.js",
     "worker:reminder": "node src/jobs/reminder.worker.js",
     "worker:recurring": "node src/jobs/recurring.worker.js",
     "worker:webhook": "node src/jobs/webhook.worker.js",
+    "inspect": "node scripts/inspect-queue.js",
+    "inspect:reminder": "node scripts/inspect-queue.js reminder",
+    "inspect:email": "node scripts/inspect-queue.js email",
+    "test:reminders": "node test-reminders.js",
     "test": "jest --runInBand --forceExit",
     "test:watch": "jest --watch",
     "lint": "eslint src/**/*.js"
@@ -47,6 +54,7 @@
     "winston-daily-rotate-file": "^5.0.0"
   },
   "devDependencies": {
+    "concurrently": "^9.2.1",
     "eslint": "^9.0.0",
     "jest": "^29.7.0",
     "mongodb-memory-server": "^9.1.6",

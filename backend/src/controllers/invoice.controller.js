@@ -35,6 +35,11 @@ const send = asyncHandler(async (req, res) => {
   success(res, {}, 'Invoice sent successfully');
 });
 
+const markAsSent = asyncHandler(async (req, res) => {
+  const invoice = await invoiceService.markAsSent(req.params.id, req.companyId);
+  success(res, { invoice }, 'Invoice marked as sent — reminders scheduled');
+});
+
 const duplicate = asyncHandler(async (req, res) => {
   const invoice = await invoiceService.duplicate(req.params.id, req.companyId, req.user._id);
   created(res, { invoice }, 'Invoice duplicated');
@@ -74,4 +79,4 @@ const getNextNumber = asyncHandler(async (req, res) => {
   success(res, { nextNumber });
 });
 
-module.exports = { create, list, getOne, update, cancel, send, duplicate, createCreditNote, viewPublic, getPdf, getNextNumber };
+module.exports = { create, list, getOne, update, cancel, send, markAsSent, duplicate, createCreditNote, viewPublic, getPdf, getNextNumber };
