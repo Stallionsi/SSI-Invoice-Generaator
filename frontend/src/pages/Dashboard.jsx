@@ -62,6 +62,21 @@ export default function Dashboard() {
   const overdueCount  = overdueData?.data?.pagination?.total ?? 0;
   const recentInvoices = allInvoices.slice(0, 5);
 
+  // ── Dominant currency across ALL non-cancelled invoices ─────────────────────
+  // Used as fallback when there are no paid invoices yet, so the UI shows
+  // the correct symbol (e.g. $ not ₹) for a USD-only company.
+  const dominantCurrency = useMemo(() => {
+    const freq = {};
+    allInvoices
+      .filter((inv) => (inv.status?.toLowerCase() || '') !== 'cancelled')
+      .forEach((inv) => {
+        const cur = inv.currency || 'INR';
+        freq[cur] = (freq[cur] || 0) + 1;
+      });
+    const sorted = Object.entries(freq).sort((a, b) => b[1] - a[1]);
+    return sorted[0]?.[0] || 'INR';
+  }, [allInvoices]);
+
   // ── Revenue grouped by currency (paid only) ────────────────────────────────
   const revenuesByCurrency = useMemo(() => {
     const map = {};
@@ -81,15 +96,31 @@ export default function Dashboard() {
       });
   }, [allInvoices]);
 
+  // ── Draft + outstanding totals by currency (for pipeline row) ────────────
+  const pipelineByCurrency = useMemo(() => {
+    const map = {};
+    allInvoices.forEach((inv) => {
+      const s   = (inv.status || '').toLowerCase();
+      if (s === 'cancelled') return;
+      const cur = inv.currency || 'INR';
+      const amt = n(inv.grandTotal);
+      if (!map[cur]) map[cur] = { draft: 0, outstanding: 0, collected: 0 };
+      if (s === 'draft')      map[cur].draft       += amt;
+      else if (s === 'paid')  map[cur].collected   += amt;
+      else                    map[cur].outstanding += amt; // sent / overdue
+    });
+    return map;
+  }, [allInvoices]);
+
   // All unique currencies in paid invoices — for the chart tab selector
   const paidCurrencies = useMemo(
     () => revenuesByCurrency.map((r) => r.currency),
     [revenuesByCurrency],
   );
 
-  // Selected currency for the chart (default: first in list)
+  // Selected currency for the chart (default: first paid currency, then dominant)
   const [chartCurrency, setChartCurrency] = useState(null);
-  const activeCurrency = chartCurrency ?? paidCurrencies[0] ?? 'INR';
+  const activeCurrency = chartCurrency ?? paidCurrencies[0] ?? dominantCurrency;
 
   // ── Chart: paid invoices for the selected currency, grouped by month ────────
   const chartData = useMemo(() => {
@@ -116,14 +147,15 @@ export default function Dashboard() {
   // Revenue stat card value: single currency → formatted amount; multi → stacked lines
   const revenueDisplay = useMemo(() => {
     if (invLoading) return '—';
-    if (revenuesByCurrency.length === 0) return fmtCurrency(0);
+    // No paid invoices yet → show $0 / ₹0 using the dominant currency in the system
+    if (revenuesByCurrency.length === 0) return fmtCurrency(0, dominantCurrency);
     if (revenuesByCurrency.length === 1)
       return fmtCurrency(revenuesByCurrency[0].total, revenuesByCurrency[0].currency);
     // Multi-currency: return first + note
     return revenuesByCurrency
       .map((r) => fmtCurrency(r.total, r.currency))
       .join(' · ');
-  }, [invLoading, revenuesByCurrency]);
+  }, [invLoading, revenuesByCurrency, dominantCurrency]);
 
   // Tooltip Y-axis formatter for chart
   const chartFmt = (v) => [fmtCurrency(v, activeCurrency), 'Revenue'];
@@ -234,7 +266,7 @@ export default function Dashboard() {
           {invLoading ? (
             <div className="flex justify-center py-12"><Spinner /></div>
           ) : chartData.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-12 text-center">
+            <div className="flex flex-col items-center justify-center py-10 text-center">
               <TrendingUp className="w-10 h-10 mb-3" style={{ color: '#E0E7FF' }} />
               <p className="text-sm text-gray-400 font-medium">No {activeCurrency} revenue yet</p>
               <p className="text-xs text-gray-300 mt-1">
@@ -283,6 +315,39 @@ export default function Dashboard() {
               </AreaChart>
             </ResponsiveContainer>
           )}
+
+          {/* ── Pipeline summary row (always visible) ─────────────────────── */}
+          {!invLoading && (() => {
+            const p = pipelineByCurrency[activeCurrency] || { collected: 0, draft: 0, outstanding: 0 };
+            return (
+              <div
+                className="mt-4 pt-4 grid grid-cols-3 gap-2 text-center"
+                style={{ borderTop: '1px solid #F3F4F6' }}
+              >
+                <div>
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-emerald-500 mb-0.5">Collected</p>
+                  <p className="text-sm font-extrabold text-gray-800 tabular-nums">
+                    {fmtCompact(p.collected, activeCurrency)}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-[10px] font-bold uppercase tracking-wider mb-0.5" style={{ color: '#6366F1' }}>Draft</p>
+                  <p className="text-sm font-extrabold tabular-nums" style={{ color: '#4338CA' }}>
+                    {fmtCompact(p.draft, activeCurrency)}
+                  </p>
+                  {p.draft > 0 && (
+                    <p className="text-[9px] text-gray-400 leading-tight">pipeline</p>
+                  )}
+                </div>
+                <div>
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-amber-500 mb-0.5">Outstanding</p>
+                  <p className="text-sm font-extrabold text-gray-800 tabular-nums">
+                    {fmtCompact(p.outstanding, activeCurrency)}
+                  </p>
+                </div>
+              </div>
+            );
+          })()}
         </div>
 
         {/* ── Recent invoices ────────────────────────────────────────────── */}

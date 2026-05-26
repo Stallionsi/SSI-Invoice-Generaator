@@ -5,7 +5,7 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   PieChart, Pie, Cell, Legend,
 } from 'recharts';
-import { Download, TrendingUp, Clock, Users, DollarSign, FileText, ChevronDown } from 'lucide-react';
+import { Download, TrendingUp, Clock, Users, DollarSign, FileText, ChevronDown, Pencil } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { getInvoices } from '../api/invoices.api';
 import { getClientReport } from '../api/reports.api';
@@ -104,6 +104,10 @@ const status = (inv) => (inv?.status ?? '').toLowerCase();
 /**
  * Compute stats for a set of invoices that all share one currency.
  * Returns { totalRevenue, totalCollected, outstanding }.
+ *
+ * - totalRevenue  = all non-cancelled invoices (includes drafts = potential revenue)
+ * - totalCollected = paid invoices
+ * - outstanding   = sent/overdue invoices not yet paid (drafts excluded — not yet receivable)
  */
 function computeStats(invoices) {
   let totalRevenue   = 0;
@@ -115,8 +119,8 @@ function computeStats(invoices) {
     const s   = status(inv);
     if (s === 'cancelled') continue;
     totalRevenue += amt;
-    if (s === 'paid') totalCollected += amt;
-    else              outstanding    += amt;
+    if      (s === 'paid')  totalCollected += amt;
+    else if (s !== 'draft') outstanding    += amt; // drafts not yet receivable
   }
   return { totalRevenue, totalCollected, outstanding };
 }
@@ -133,10 +137,11 @@ function computeStatsByCurrency(invoices) {
     const amt = n(inv.grandTotal);
     const s   = status(inv);
     if (s === 'cancelled') continue;
-    if (!map[cur]) map[cur] = { currency: cur, totalRevenue: 0, totalCollected: 0, outstanding: 0 };
+    if (!map[cur]) map[cur] = { currency: cur, totalRevenue: 0, totalCollected: 0, outstanding: 0, draftCount: 0 };
     map[cur].totalRevenue += amt;
-    if (s === 'paid') map[cur].totalCollected += amt;
-    else              map[cur].outstanding    += amt;
+    if      (s === 'paid')  map[cur].totalCollected += amt;
+    else if (s === 'draft') map[cur].draftCount     += 1;
+    else                    map[cur].outstanding    += amt;
   }
   return Object.values(map).sort((a, b) => a.currency.localeCompare(b.currency));
 }
@@ -280,24 +285,52 @@ function downloadInvoicesXlsx(invoices) {
 
 // ── Sub-components ──────────────────────────────────────────────────────────
 
-function StatCard({ icon: Icon, label, value, color = 'blue' }) {
+function StatCard({ icon: Icon, label, value, sublabel, color = 'blue', onClick }) {
   const p = {
-    blue:   { card: '#EEF2FF', iconBg: '#E0E7FF', iconFg: '#4F46E5', val: '#1E1B4B', lbl: '#4338CA' },
-    green:  { card: '#F0FDF4', iconBg: '#DCFCE7', iconFg: '#16A34A', val: '#14532D', lbl: '#15803D' },
-    amber:  { card: '#FFFBEB', iconBg: '#FEF3C7', iconFg: '#D97706', val: '#451A03', lbl: '#B45309' },
-    red:    { card: '#FFF1F2', iconBg: '#FFE4E6', iconFg: '#E11D48', val: '#4C0519', lbl: '#9F1239' },
-  }[color] || { card: '#EEF2FF', iconBg: '#E0E7FF', iconFg: '#4F46E5', val: '#1E1B4B', lbl: '#4338CA' };
+    blue:   { card: '#EEF2FF', iconBg: '#E0E7FF', iconFg: '#4F46E5', val: '#1E1B4B', lbl: '#4338CA', hover: '#E0E7FF' },
+    green:  { card: '#F0FDF4', iconBg: '#DCFCE7', iconFg: '#16A34A', val: '#14532D', lbl: '#15803D', hover: '#DCFCE7' },
+    amber:  { card: '#FFFBEB', iconBg: '#FEF3C7', iconFg: '#D97706', val: '#451A03', lbl: '#B45309', hover: '#FEF3C7' },
+    red:    { card: '#FFF1F2', iconBg: '#FFE4E6', iconFg: '#E11D48', val: '#4C0519', lbl: '#9F1239', hover: '#FFE4E6' },
+    slate:  { card: '#F8FAFC', iconBg: '#F1F5F9', iconFg: '#64748B', val: '#1E293B', lbl: '#475569', hover: '#E2E8F0' },
+  }[color] || { card: '#EEF2FF', iconBg: '#E0E7FF', iconFg: '#4F46E5', val: '#1E1B4B', lbl: '#4338CA', hover: '#E0E7FF' };
+
+  const [hovered, setHovered] = useState(false);
+
   return (
-    <div className="stat-card" style={{ background: p.card }}>
+    <div
+      className="stat-card"
+      style={{
+        background:  p.card,
+        cursor:      onClick ? 'pointer' : 'default',
+        transition:  'transform 0.15s ease, box-shadow 0.15s ease, background 0.15s ease',
+        transform:   onClick && hovered ? 'translateY(-2px)' : 'none',
+        boxShadow:   onClick && hovered ? '0 6px 20px rgba(99,102,241,0.15)' : undefined,
+        background:  onClick && hovered ? p.hover : p.card,
+      }}
+      onClick={onClick}
+      onMouseEnter={() => onClick && setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      role={onClick ? 'button' : undefined}
+      tabIndex={onClick ? 0 : undefined}
+      onKeyDown={onClick ? (e) => e.key === 'Enter' && onClick() : undefined}
+    >
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <p className="text-[11px] font-bold uppercase tracking-widest mb-2 truncate" style={{ color: p.lbl }}>{label}</p>
           <p className="text-2xl font-extrabold tabular-nums truncate" style={{ color: p.val }}>{value}</p>
+          {sublabel && (
+            <p className="text-[10px] mt-0.5 truncate" style={{ color: p.lbl, opacity: 0.65 }}>{sublabel}</p>
+          )}
         </div>
-        <div className="rounded-xl p-2.5 shrink-0" style={{ background: p.iconBg }}>
+        <div className="rounded-xl p-2.5 shrink-0 transition-transform duration-150" style={{ background: p.iconBg, transform: onClick && hovered ? 'scale(1.1)' : 'none' }}>
           <Icon className="w-5 h-5" style={{ color: p.iconFg }} />
         </div>
       </div>
+      {onClick && (
+        <p className="text-[10px] font-semibold mt-2 opacity-50 tracking-wide" style={{ color: p.lbl }}>
+          View invoices →
+        </p>
+      )}
     </div>
   );
 }
@@ -420,18 +453,35 @@ export default function Reports() {
     if (activeCurrency) setChartCurrency(activeCurrency);
   }, [activeCurrency]);
 
-  // ── Stats — all based on period-filtered invoices ─────────────────────────
+  // ── Stats — based on ALL invoices for the client (not period-filtered)
+  //    Period filter only affects the charts below, not the KPI summary cards.
   const { totalRevenue, totalCollected, outstanding } = useMemo(
-    () => computeStats(periodFilteredInvoices),
-    [periodFilteredInvoices],
+    () => computeStats(filteredInvoices),
+    [filteredInvoices],
   );
 
   const statsByCurrency = useMemo(
-    () => computeStatsByCurrency(periodFilteredInvoices),
-    [periodFilteredInvoices],
+    () => computeStatsByCurrency(filteredInvoices),
+    [filteredInvoices],
   );
 
-  const totalCount = periodFilteredInvoices.length;
+  // Non-draft, non-cancelled invoice count (all-time)
+  const totalCount = useMemo(
+    () => filteredInvoices.filter((inv) => {
+      const s = status(inv);
+      return s !== 'cancelled';
+    }).length,
+    [filteredInvoices],
+  );
+
+  // Draft invoice count + value (all-time)
+  const { draftCount, draftValue } = useMemo(() => {
+    const drafts = filteredInvoices.filter((inv) => status(inv) === 'draft');
+    return {
+      draftCount: drafts.length,
+      draftValue: drafts.reduce((sum, inv) => sum + n(inv.grandTotal), 0),
+    };
+  }, [filteredInvoices]);
 
   // Chart — period-filtered paid invoices grouped for drill-down
   const chartData = useMemo(
@@ -499,8 +549,8 @@ export default function Reports() {
 
       {/* ── KPI stat cards ──────────────────────────────────────────────── */}
       {isLoading ? (
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-          {[1, 2, 3, 4].map((i) => (
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4 mb-6">
+          {[1, 2, 3, 4, 5].map((i) => (
             <div key={i} className="card flex items-center gap-4 p-5">
               <div className="p-3 rounded-xl bg-gray-100 shrink-0 w-11 h-11 animate-pulse" />
               <div className="space-y-2 flex-1">
@@ -518,7 +568,7 @@ export default function Reports() {
             <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">
               Combined — All Currencies
             </p>
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
               <StatCard
                 icon={TrendingUp}
                 label="Total Revenue"
@@ -528,6 +578,7 @@ export default function Reports() {
                     : n(totalRevenue).toLocaleString('en-IN', { maximumFractionDigits: 2 })
                 }
                 color="blue"
+                onClick={() => navigate(`/invoices?client=${selectedClient}`)}
               />
               <StatCard
                 icon={DollarSign}
@@ -538,6 +589,7 @@ export default function Reports() {
                     : n(totalCollected).toLocaleString('en-IN', { maximumFractionDigits: 2 })
                 }
                 color="green"
+                onClick={() => navigate(`/invoices?client=${selectedClient}&status=paid`)}
               />
               <StatCard
                 icon={Clock}
@@ -548,12 +600,22 @@ export default function Reports() {
                     : n(outstanding).toLocaleString('en-IN', { maximumFractionDigits: 2 })
                 }
                 color="amber"
+                onClick={() => navigate(`/invoices?client=${selectedClient}&status=overdue`)}
               />
               <StatCard
                 icon={FileText}
                 label="Total Invoices"
                 value={totalCount}
                 color="blue"
+                onClick={() => navigate(`/invoices?client=${selectedClient}`)}
+              />
+              <StatCard
+                icon={Pencil}
+                label="Drafts"
+                value={draftCount}
+                sublabel={activeCurrency && draftValue > 0 ? fmtCurrency(draftValue, activeCurrency) : undefined}
+                color="slate"
+                onClick={() => navigate(`/invoices?client=${selectedClient}&status=draft`)}
               />
             </div>
           </div>
@@ -574,8 +636,8 @@ export default function Reports() {
                 }`}
               >
                 {statsByCurrency.map((s) => {
-                  const invCount = periodFilteredInvoices.filter(
-                    (inv) => (inv.currency || 'INR') === s.currency,
+                  const invCount = filteredInvoices.filter(
+                    (inv) => (inv.currency || 'INR') === s.currency && status(inv) !== 'cancelled',
                   ).length;
                   return (
                     <div key={s.currency} className="card p-4">
@@ -622,49 +684,64 @@ export default function Reports() {
           <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">
             Totals by Currency — select a client for a single-currency view
           </p>
-          {statsByCurrency.map((s) => (
-            <div key={s.currency} className="card p-4">
-              <p className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3">
-                {s.currency}
-              </p>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                <StatCard icon={TrendingUp} label="Total Revenue"   value={fmtCurrency(s.totalRevenue,   s.currency)} color="blue"  />
-                <StatCard icon={DollarSign} label="Total Collected"  value={fmtCurrency(s.totalCollected, s.currency)} color="green" />
-                <StatCard icon={Clock}      label="Outstanding"      value={fmtCurrency(s.outstanding,    s.currency)} color="amber" />
-                <StatCard icon={FileText}   label="Total Invoices"
-                  value={periodFilteredInvoices.filter((inv) => (inv.currency || 'INR') === s.currency).length}
-                  color="blue"
-                />
+          {statsByCurrency.map((s) => {
+            const invCount = filteredInvoices.filter(
+              (inv) => (inv.currency || 'INR') === s.currency && status(inv) !== 'cancelled',
+            ).length;
+            return (
+              <div key={s.currency} className="card p-4">
+                <p className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3">
+                  {s.currency}
+                </p>
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
+                  <StatCard icon={TrendingUp} label="Total Revenue"   value={fmtCurrency(s.totalRevenue,   s.currency)} color="blue"  onClick={() => navigate('/invoices')} />
+                  <StatCard icon={DollarSign} label="Total Collected" value={fmtCurrency(s.totalCollected, s.currency)} color="green" onClick={() => navigate('/invoices?status=paid')} />
+                  <StatCard icon={Clock}      label="Outstanding"     value={fmtCurrency(s.outstanding,    s.currency)} color="amber" onClick={() => navigate('/invoices?status=overdue')} />
+                  <StatCard icon={FileText}   label="Total Invoices"  value={invCount} color="blue" onClick={() => navigate('/invoices')} />
+                  <StatCard icon={Pencil}     label="Drafts"          value={s.draftCount ?? 0} color="slate" onClick={() => navigate('/invoices?status=draft')} />
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       ) : (
         /* ── Single-currency KPI cards (All Clients, one currency) ── */
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4 mb-6">
           <StatCard
             icon={TrendingUp}
             label="Total Revenue"
             value={fmtCurrency(totalRevenue, activeCurrency)}
             color="blue"
+            onClick={() => navigate('/invoices')}
           />
           <StatCard
             icon={DollarSign}
             label="Total Collected"
             value={fmtCurrency(totalCollected, activeCurrency)}
             color="green"
+            onClick={() => navigate('/invoices?status=paid')}
           />
           <StatCard
             icon={Clock}
             label="Outstanding"
             value={fmtCurrency(outstanding, activeCurrency)}
             color="amber"
+            onClick={() => navigate('/invoices?status=overdue')}
           />
           <StatCard
             icon={FileText}
             label="Total Invoices"
             value={totalCount}
             color="blue"
+            onClick={() => navigate('/invoices')}
+          />
+          <StatCard
+            icon={Pencil}
+            label="Drafts"
+            value={draftCount}
+            sublabel={draftValue > 0 ? fmtCurrency(draftValue, activeCurrency) : undefined}
+            color="slate"
+            onClick={() => navigate('/invoices?status=draft')}
           />
         </div>
       )}

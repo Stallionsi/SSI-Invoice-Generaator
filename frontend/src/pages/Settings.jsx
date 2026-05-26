@@ -14,6 +14,7 @@ import {
 import { useActiveCompany } from '../hooks/useActiveCompany';
 import PageHeader from '../components/ui/PageHeader';
 import Spinner from '../components/ui/Spinner';
+import InvoiceSeriesManager from '../components/settings/InvoiceSeriesManager';
 
 // ─── Zod Schemas ───────────────────────────────────────────────────────────────
 const bankSchema = z.object({
@@ -565,6 +566,9 @@ export default function Settings() {
                 </div>
               </form>
             </div>
+
+            {/* ── Invoice Series Management ── */}
+            <InvoiceSeriesManager />
           </>
         )}
 

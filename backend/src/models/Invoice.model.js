@@ -40,7 +40,10 @@ const lineItemSchema = new mongoose.Schema(
       required: true,
       min: [0, 'Unit price cannot be negative'],
     },
-    // Discount on this specific line item
+    // ── Date range for this line item (service period) ────────────────
+    fromDate: { type: Date, default: null },
+    toDate:   { type: Date, default: null },
+    // Discount on this specific line item (kept for backward compat; new invoices use invoice-level discount only)
     discount: {
       type: { type: String, enum: ['percentage', 'fixed'], default: 'percentage' },
       value: { type: Number, default: 0, min: 0 },
@@ -174,6 +177,20 @@ const invoiceSchema = new mongoose.Schema(
       shippingAddress: String,
       gstNumber: String,
     },
+
+    // ── Invoice Series ─────────────────────────────────────────────────────────
+    // Optional reference to an InvoiceSeries document that determined the prefix
+    // for this invoice's number.  null = company default prefix was used.
+    series: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'InvoiceSeries',
+      default: null,
+    },
+
+    // ── Global Unit Price (single price applied to all line items) ────────────
+    // When set, every line item uses this price instead of its own unitPrice.
+    // Stored for audit / PDF display; individual lineItems.unitPrice also holds the value.
+    globalUnitPrice: { type: Number, default: null },
 
     // ── Line Items ─────────────────────────────────────────────────────────
     lineItems: [lineItemSchema],

@@ -17,8 +17,9 @@ const clientRoutes      = require('./routes/client.routes');
 const invoiceRoutes     = require('./routes/invoice.routes');
 const paymentRoutes     = require('./routes/payment.routes');
 const reportRoutes      = require('./routes/report.routes');
-const customFieldRoutes = require('./routes/customField.routes');
-const utilsRoutes       = require('./routes/utils.routes');
+const customFieldRoutes   = require('./routes/customField.routes');
+const utilsRoutes         = require('./routes/utils.routes');
+const invoiceSeriesRoutes = require('./routes/invoiceSeries.routes');
 
 // ─── Middlewares ───────────────────────────────────────────────────────────
 const { errorHandler } = require('./middlewares/error.middleware');
@@ -104,8 +105,9 @@ app.use('/api/clients',       clientRoutes);
 app.use('/api/invoices',      invoiceRoutes);
 app.use('/api/payments',      paymentRoutes);
 app.use('/api/reports',       reportRoutes);
-app.use('/api/custom-fields', customFieldRoutes);
-app.use('/api/utils',         utilsRoutes);
+app.use('/api/custom-fields',   customFieldRoutes);
+app.use('/api/utils',           utilsRoutes);
+app.use('/api/invoice-series',  invoiceSeriesRoutes);
 
 // ─── Serve React Frontend (production) ────────────────────────────────────
 if (NODE_ENV === 'production') {

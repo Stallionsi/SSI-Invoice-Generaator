@@ -88,6 +88,21 @@ const fmtDate = (d) => {
   return `${dt.getDate()} ${MONTHS[dt.getMonth()]} ${dt.getFullYear()}`;
 };
 
+/**
+ * Format a line-item date in country-appropriate short form.
+ * INR / India  \u2192 DD/MM/YYYY
+ * USD / others \u2192 MM/DD/YYYY
+ */
+const fmtLineItemDate = (d, currency = 'INR') => {
+  if (!d) return null;
+  const dt = new Date(d);
+  if (isNaN(dt.getTime())) return null;
+  const dd   = String(dt.getDate()).padStart(2, '0');
+  const mm   = String(dt.getMonth() + 1).padStart(2, '0');
+  const yyyy = dt.getFullYear();
+  return currency === 'INR' ? `${dd}/${mm}/${yyyy}` : `${mm}/${dd}/${yyyy}`;
+};
+
 // PDFKit built-in fonts (Helvetica) support Latin-1; use Rs. for INR, £ for GBP.
 const currSym = (c) =>
   ({ INR: 'Rs.', USD: '$', EUR: 'EUR', GBP: '\u00A3' }[c] || (String(c || 'Rs.')));
@@ -459,11 +474,22 @@ const drawItemsTable = (doc, invoice, y) => {
   const lineItems = invoice.lineItems || [];
   let uniformRowH = MIN_ROW;
   const measurements = lineItems.map((item) => {
-    const desc    = safe(item.description);
-    const subline = item.secondLineDescription ? safe(item.secondLineDescription) : null;
+    const desc = safe(item.description);
+
+    // Build subline: prefer secondLineDescription; otherwise compose from date range
+    let subline = item.secondLineDescription ? safe(item.secondLineDescription) : null;
+    if (!subline && item.fromDate && item.toDate) {
+      const f = fmtLineItemDate(item.fromDate, currency);
+      const t = fmtLineItemDate(item.toDate,   currency);
+      if (f && t) subline = `${f}  –  ${t}`;
+    } else if (!subline && item.fromDate) {
+      const f = fmtLineItemDate(item.fromDate, currency);
+      if (f) subline = `From: ${f}`;
+    }
 
     doc.font('Helvetica-Bold').fontSize(8.5);
-    const descH = doc.heightOfString(desc || ' ', { width: DESC_W });
+    // Single-line height only — descriptions are rendered on one line (no wrap)
+    const descH = doc.heightOfString('A', { width: 10000 });
 
     doc.font('Helvetica').fontSize(7.5);
     const subH = subline ? doc.heightOfString(subline, { width: DESC_W }) + 2 : 0;
@@ -487,9 +513,9 @@ const drawItemsTable = (doc, invoice, y) => {
     doc.font('Helvetica-Bold').fontSize(8).fillColor(NAVY)
       .text(String(i + 1), COLS[0].x + CELL_PAD, centerY, { width: COLS[0].w - CELL_PAD * 2, align: 'left', lineBreak: false });
 
-    // Description
+    // Description — single line, no wrap
     doc.font('Helvetica-Bold').fontSize(8.5).fillColor(NAVY)
-      .text(desc, DESC_X, descTopY, { width: DESC_W, lineBreak: true });
+      .text(desc, DESC_X, descTopY, { width: DESC_W, lineBreak: false });
     if (subline) {
       const subY = descTopY + Math.ceil(descH) + 2;
       doc.font('Helvetica').fontSize(7.5).fillColor(GRAY)
@@ -504,7 +530,7 @@ const drawItemsTable = (doc, invoice, y) => {
     doc.font('Helvetica').fontSize(8.5).fillColor(BODY)
       .text(cur(currency, item.unitPrice), COLS[3].x + CELL_PAD, centerY, { width: COLS[3].w - CELL_PAD * 2, align: 'right', lineBreak: false });
 
-    // Tax rate
+    // Tax rate \u2014 show dash for USD/tax-free invoices
     const taxLabel = item.taxRate > 0 ? `${item.taxRate}%` : '\u2014';
     doc.font('Helvetica').fontSize(8).fillColor(GRAY)
       .text(taxLabel, COLS[4].x + CELL_PAD, centerY, { width: COLS[4].w - CELL_PAD * 2, align: 'center', lineBreak: false });
@@ -818,7 +844,7 @@ const drawFooter = (doc, invoice, logoBuffer) => {
 
   // Center bottom: system-generated disclaimer
   doc.font('Helvetica').fontSize(7.5).fillColor('#8faecf')
-    .text('This is a system generated invoice and hence no signature required', M, fy + 28,
+    .text('This is a System Generated Invoice', M, fy + 28,
       { width: CW, align: 'center', lineBreak: false });
 
   // Right: invoice # + generated date
@@ -856,11 +882,12 @@ const generateInvoicePdf = async (invoiceIdOrObject) => {
 
   const [company, clientDoc] = await Promise.all([
     Company.findById(invoice.company).lean(),
-    Client.findById(invoice.client).select('customFields').lean(),
+    // Fetch full client so we always use the latest billing address / GST / name
+    Client.findById(invoice.client).lean(),
   ]);
 
-  // Back-fill senderDetails fields that may be missing from older snapshots.
-  // company is always fresh from DB so it has the latest values.
+  // ── Back-fill senderDetails from live company record ──────────────────────
+  // Covers fields that may be missing from older invoice snapshots.
   if (company) {
     invoice = {
       ...invoice,
@@ -870,6 +897,36 @@ const generateInvoicePdf = async (invoiceIdOrObject) => {
         address:  invoice.senderDetails?.address  || null,
         email:    invoice.senderDetails?.email    || company.email    || null,
         phone:    invoice.senderDetails?.phone    || company.phone    || null,
+      },
+    };
+  }
+
+  // ── Always refresh recipientDetails from the live client record ───────────
+  // When a client's billing address / name / GST is edited after invoice
+  // creation the stored snapshot becomes stale.  We overwrite it here so
+  // the PDF always reflects the current client data.
+  if (clientDoc) {
+    const buildAddress = (addr) => {
+      if (!addr) return '';
+      return [
+        addr.line1,
+        addr.line2,
+        [addr.city, addr.state].filter(Boolean).join(', '),
+        addr.zip || addr.pincode,
+        addr.country,
+      ].filter(Boolean).join('\n');
+    };
+
+    invoice = {
+      ...invoice,
+      recipientDetails: {
+        name:            clientDoc.clientName           || invoice.recipientDetails?.name           || '',
+        companyName:     clientDoc.companyName          || invoice.recipientDetails?.companyName    || '',
+        email:           clientDoc.email                || invoice.recipientDetails?.email          || '',
+        phone:           clientDoc.phone                || invoice.recipientDetails?.phone          || '',
+        billingAddress:  buildAddress(clientDoc.billingAddress) || invoice.recipientDetails?.billingAddress || '',
+        shippingAddress: buildAddress(clientDoc.shippingAddress) || invoice.recipientDetails?.shippingAddress || '',
+        gstNumber:       clientDoc.gstNumber            || invoice.recipientDetails?.gstNumber      || '',
       },
     };
   }
@@ -884,8 +941,10 @@ const generateInvoicePdf = async (invoiceIdOrObject) => {
     : (typeof clientCF === 'object' ? clientCF : {});
   const mergedCustomFields = { ...clientCFPlain, ...invoiceCF };
 
-  const safeName = safe(invoice.invoiceNumber).replace(/[/\\:*?"<>|]/g, '-');
-  const filename  = `${safeName}-${Date.now()}.pdf`;
+  // Filename format: Invoice_SSI-PAL-2026-27-000002.pdf
+  // Sanitise invoice number for safe filesystem use, then add Invoice_ prefix.
+  const safeName = safe(invoice.invoiceNumber).replace(/[/\\:*?"<>|\s]/g, '-');
+  const filename  = `Invoice_${safeName}.pdf`;
   const filePath  = path.join(PDFS_DIR, filename);
 
   console.log('PDF generation started', { invoiceId: String(invoice._id), invoiceNumber: invoice.invoiceNumber });

@@ -156,7 +156,7 @@ const sendInvoiceEmail = async ({ invoiceId, companyId, recipientEmail, ccEmails
 
       if (pdfBuffer.length > 0) {
         attachments.push({
-          filename:    `invoice-${invoice.invoiceNumber}.pdf`,
+          filename:    `Invoice_${String(invoice.invoiceNumber).replace(/[/\\:*?"<>|\s]/g, '-')}.pdf`,
           content:     pdfBuffer,
           contentType: 'application/pdf',
         });

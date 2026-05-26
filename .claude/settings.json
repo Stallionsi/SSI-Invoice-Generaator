@@ -19,7 +19,18 @@
       "Bash(Remove-Item \"c:\\\\Users\\\\saura\\\\OneDrive\\\\Desktop\\\\SSI-PROJECTS\\\\Invoice Generator\\\\fix_pdf_table.js\")",
       "Bash(Get-ChildItem -Path \"c:\\\\Users\\\\saura\\\\OneDrive\\\\Desktop\\\\SSI-PROJECTS\\\\Invoice Generator\\\\backend\\\\src\" -Recurse -Directory)",
       "Bash(node --input-type=module)",
-      "Bash(node -e \"require\\('dotenv'\\).config\\(\\); const { Worker } = require\\('bullmq'\\); const { getRedisConnection } = require\\('./src/config/redis'\\); try { const w = new Worker\\('tv', async \\(\\) => {}, { connection: getRedisConnection\\(\\) }\\); console.log\\('OK - Worker constructed'\\); setTimeout\\(\\(\\) => { w.close\\(\\); process.exit\\(0\\); }, 500\\); } catch \\(e\\) { console.error\\('FAIL:', e.message\\); process.exit\\(1\\); }\")"
+      "Bash(node -e \"require\\('dotenv'\\).config\\(\\); const { Worker } = require\\('bullmq'\\); const { getRedisConnection } = require\\('./src/config/redis'\\); try { const w = new Worker\\('tv', async \\(\\) => {}, { connection: getRedisConnection\\(\\) }\\); console.log\\('OK - Worker constructed'\\); setTimeout\\(\\(\\) => { w.close\\(\\); process.exit\\(0\\); }, 500\\); } catch \\(e\\) { console.error\\('FAIL:', e.message\\); process.exit\\(1\\); }\")",
+      "Bash(Get-ChildItem -Path \"c:\\\\Users\\\\saura\\\\OneDrive\\\\Desktop\\\\SSI-PROJECTS\\\\Invoice Generator\" -Force)",
+      "Bash(Select-Object Name, FullName)",
+      "Bash(Get-ChildItem -Path \"c:\\\\Users\\\\saura\\\\OneDrive\\\\Desktop\\\\SSI-PROJECTS\\\\Invoice Generator\" -Recurse -Force)",
+      "Bash(Select-Object FullName, PSIsContainer)",
+      "Bash(Sort-Object FullName)",
+      "Bash(Format-Table -AutoSize)",
+      "Bash(node --check backend/src/services/invoice.service.js)",
+      "Bash(node --check backend/src/validations/invoice.validation.js)",
+      "Bash(node --check backend/src/models/Invoice.model.js)",
+      "Bash(node --check \"c:\\\\Users\\\\saura\\\\OneDrive\\\\Desktop\\\\SSI-PROJECTS\\\\Invoice Generator\\\\backend\\\\src\\\\utils\\\\invoiceNumber.util.js\")",
+      "Bash(node --check \"c:\\\\Users\\\\saura\\\\OneDrive\\\\Desktop\\\\SSI-PROJECTS\\\\Invoice Generator\\\\backend\\\\src\\\\services\\\\invoiceSeries.service.js\")"
     ]
   }
 }

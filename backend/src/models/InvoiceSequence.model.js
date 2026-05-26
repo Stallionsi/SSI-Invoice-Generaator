@@ -1,27 +1,37 @@
+'use strict';
+
 const mongoose = require('mongoose');
 
 /**
- * InvoiceSequence — Atomic counter for per-client invoice numbering.
+ * InvoiceSequence — Atomic counter for per-client, per-series invoice numbering.
  *
- * One document per (company + client + fiscalYear) triple.
+ * One document per (company + client + series + fiscalYear) quad.
  * `current` is the last number issued; the next invoice gets current + 1.
  *
- * ── Why per-client? ────────────────────────────────────────────────────────
- * Each client's invoices have their own sequence, so Client A receives
- * SSI-2026-27-0001, 0002, 0003 and Client B independently receives
- * SSI-2026-27-0001, 0002.  The (company, client, invoiceNumber) unique index
- * on the Invoice collection prevents collisions within a client.
+ * ── Scoping ─────────────────────────────────────────────────────────────────
+ * series=null   → company-default sequence (backward compat with old invoices)
+ * series=ObjectId → series-specific sequence (e.g. SSI/PAL counter for Client A)
  *
- * ── Concurrency ────────────────────────────────────────────────────────────
+ * This means Client A can have independent counters for each series they are
+ * invoiced under — SSI/PAL-2026-27-000003 and SSI/COM-2026-27-000001 are
+ * separate sequences, both scoped to the same client.
+ *
+ * ── Concurrency ─────────────────────────────────────────────────────────────
  * findOneAndUpdate + $inc is a single atomic WiredTiger operation.  Two
- * concurrent invoice creations for the same client+fiscalYear are serialised
- * at the document level — they receive current=1 and current=2, never both 1.
+ * concurrent invoice creations for the same (company, client, series, fiscalYear)
+ * are serialised at the document level — they receive current=1 and current=2.
  *
- * ── Database migration note ─────────────────────────────────────────────────
- * If upgrading from the old company-only schema, drop the old index and let
- * Mongoose recreate it:
- *   db.invoicesequences.dropIndex('company_1_fiscalYear_1')
- * (existing counter documents without a client field are treated as client=null)
+ * ── Database migration note ──────────────────────────────────────────────────
+ * Upgrading from the previous schema (no series field, index was
+ * { company, client, fiscalYear }):
+ *
+ *   1. Drop the old index:
+ *      db.invoicesequences.dropIndex('company_1_client_1_fiscalYear_1')
+ *
+ *   2. Restart the app — Mongoose recreates the new index automatically.
+ *
+ * Existing counter documents without a series field are treated as series=null
+ * and continue to work as the company-default sequence.
  */
 const invoiceSequenceSchema = new mongoose.Schema(
   {
@@ -30,10 +40,17 @@ const invoiceSequenceSchema = new mongoose.Schema(
       ref: 'Company',
       required: true,
     },
-    // null for legacy/company-wide counters; set to a Client ObjectId for per-client
+    // null → company-wide (legacy / no series selected)
+    // ObjectId → specific InvoiceSeries
     client: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'Client',
+      default: null,
+    },
+    // null → no series (backward compat); ObjectId → InvoiceSeries document
+    series: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'InvoiceSeries',
       default: null,
     },
     // Format: "YYYY-YY" e.g. "2026-27"
@@ -42,7 +59,7 @@ const invoiceSequenceSchema = new mongoose.Schema(
       required: true,
       match: [/^\d{4}-\d{2}$/, 'fiscalYear must be in YYYY-YY format'],
     },
-    // The last issued sequence number for this (company + client + fiscalYear).
+    // The last issued sequence number for this quad.
     current: {
       type: Number,
       default: 0,
@@ -55,9 +72,13 @@ const invoiceSequenceSchema = new mongoose.Schema(
   },
 );
 
-// Unique per (company, client, fiscalYear) — enforces correct atomic upsert behaviour.
-// client: null is treated as a distinct value, so company-wide fallback counters
-// (client=null) coexist safely with per-client counters.
-invoiceSequenceSchema.index({ company: 1, client: 1, fiscalYear: 1 }, { unique: true });
+// ─── Indexes ──────────────────────────────────────────────────────────────────
+// Unique per (company, client, series, fiscalYear).
+// series=null and series=ObjectId are distinct values → each series gets its own
+// independent counter per client per fiscal year.
+invoiceSequenceSchema.index(
+  { company: 1, client: 1, series: 1, fiscalYear: 1 },
+  { unique: true },
+);
 
 module.exports = mongoose.model('InvoiceSequence', invoiceSequenceSchema);

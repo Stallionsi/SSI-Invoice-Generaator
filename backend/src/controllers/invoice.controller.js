@@ -69,13 +69,17 @@ const getPdf = asyncHandler(async (req, res) => {
   const pdfPath = await generateInvoicePdf(invoice._id);
 
   const fullPath = path.resolve(pdfPath);
+  // Filename format matches the generated file: Invoice_SSI-PAL-2026-27-000002.pdf
+  const safeNum  = String(invoice.invoiceNumber).replace(/[/\\:*?"<>|\s]/g, '-');
+  const dlName   = `Invoice_${safeNum}.pdf`;
   res.setHeader('Content-Type', 'application/pdf');
-  res.setHeader('Content-Disposition', `attachment; filename="invoice-${invoice.invoiceNumber}.pdf"`);
+  res.setHeader('Content-Disposition', `attachment; filename="${dlName}"`);
   res.sendFile(fullPath);
 });
 const getNextNumber = asyncHandler(async (req, res) => {
-  const clientId   = req.query.clientId || null;
-  const nextNumber = await previewNextInvoiceNumber(req.companyId, clientId);
+  const clientId = req.query.clientId || null;
+  const seriesId = req.query.seriesId || null;
+  const nextNumber = await previewNextInvoiceNumber(req.companyId, clientId, seriesId);
   success(res, { nextNumber });
 });
 

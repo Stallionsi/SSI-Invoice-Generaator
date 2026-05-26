@@ -4,9 +4,12 @@ const lineItemSchema = Joi.object({
   description:            Joi.string().trim().min(1).max(500).required(),
   secondLineDescription:  Joi.string().trim().max(500).allow('', null),
   hsnSacCode:             Joi.string().trim().allow('', null),
-  quantity:               Joi.number().min(0.001).required(),
+  quantity:               Joi.number().min(0).required(),
   unit:                   Joi.string().trim().default('Nos'),
   unitPrice:              Joi.number().min(0).required(),
+  // Service period date range per line item
+  fromDate:               Joi.alternatives().try(Joi.date().iso(), Joi.valid('', null)).default(null),
+  toDate:                 Joi.alternatives().try(Joi.date().iso(), Joi.valid('', null)).default(null),
   discount: Joi.object({
     type:  Joi.string().valid('percentage', 'fixed').default('percentage'),
     value: Joi.number().min(0).max(100).default(0),
@@ -32,6 +35,9 @@ const projectSchema = Joi.object({
 
 const create = Joi.object({
   client:              Joi.string().hex().length(24).required(),
+  // Optional: links invoice to an InvoiceSeries document.
+  // When provided the series prefix is used instead of the company shortCode.
+  seriesId:            Joi.string().hex().length(24).allow('', null).default(null),
   invoiceNumber:       Joi.string().trim().max(50).allow('', null), // optional override; auto-generated if omitted
   invoiceDate:         Joi.date().iso().default(() => new Date()),
   dueDate:             Joi.date().iso().allow(null),
@@ -42,6 +48,8 @@ const create = Joi.object({
   currency:            Joi.string().length(3).uppercase().default('INR'),
   exchangeRate:        Joi.number().min(0).default(1),
   gstType:             Joi.string().valid('intrastate', 'interstate', 'export', 'none').default('intrastate'),
+  // Global unit price — single price applied to all line items; individual unitPrices mirror this
+  globalUnitPrice:     Joi.number().min(0).allow(null).default(null),
   lineItems:           Joi.array().items(lineItemSchema).min(1).required(),
   invoiceDiscount: Joi.object({
     type:  Joi.string().valid('percentage', 'fixed').default('percentage'),

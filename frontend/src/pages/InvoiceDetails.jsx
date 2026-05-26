@@ -113,7 +113,7 @@ export default function InvoiceDetails() {
 
               <a
                 href={pdfUrl}
-                download={`invoice-${inv?.invoiceNumber || id}.pdf`}
+                download={`Invoice_${(inv?.invoiceNumber || id).replace(/[/\\:*?"<>|\s]/g, '-')}.pdf`}
                 className="flex items-center gap-1.5 h-8 px-3 rounded-xl text-xs font-semibold bg-white/20 hover:bg-white/30 text-white border border-white/20 transition-all"
               >
                 <Download className="w-3.5 h-3.5" />

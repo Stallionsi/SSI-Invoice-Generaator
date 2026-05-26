@@ -12,6 +12,10 @@ export const generatePdf = (id) => api.get(`/invoices/${id}/pdf`, { responseType
 export const addPayment = (invoiceId, data) =>
   api.post(`/invoices/${invoiceId}/payments`, data);
 
-export const getNextInvoiceNumber = (clientId) =>
-  api.get('/invoices/next-number', { params: clientId ? { clientId } : {} });
+export const getNextInvoiceNumber = (clientId, seriesId) => {
+  const params = {};
+  if (clientId) params.clientId = clientId;
+  if (seriesId) params.seriesId = seriesId;
+  return api.get('/invoices/next-number', { params });
+};
 

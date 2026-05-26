@@ -69,8 +69,13 @@ const create = async (data, companyId, userId) => {
   // to prevent CGST/SGST labels appearing on non-INR invoices.
   const gstType = invoiceCurrency === 'INR' ? (data.gstType || 'intrastate') : 'none';
 
+  // Resolve global unit price — if set, every line item uses this price
+  const globalUnitPrice = data.globalUnitPrice != null ? parseFloat(data.globalUnitPrice) : null;
+
   // Calculate line items (currency-aware: non-INR uses generic tax, not CGST/SGST)
-  const lineItems = data.lineItems.map((item) => calculateLineItem(item, gstType, invoiceCurrency));
+  const lineItems = data.lineItems.map((item) =>
+    calculateLineItem(item, gstType, invoiceCurrency, globalUnitPrice)
+  );
 
   // Calculate invoice totals
   const totals = calculateInvoiceTotals(lineItems, data.invoiceDiscount, {
@@ -122,8 +127,11 @@ const create = async (data, companyId, userId) => {
       );
     }
   } else {
-    // Atomic per-client sequence — safe under concurrent invoice creation.
-    invoiceNumber = await reserveNextInvoiceNumber(companyId, { clientId: client._id });
+    // Atomic per-client, per-series sequence — safe under concurrent invoice creation.
+    invoiceNumber = await reserveNextInvoiceNumber(companyId, {
+      clientId: client._id,
+      seriesId: data.seriesId || null,
+    });
   }
 
   // Unique view token for client-facing link
@@ -133,6 +141,7 @@ const create = async (data, companyId, userId) => {
     company:    companyId,
     client:     client._id,
     createdBy:  userId,
+    series:     data.seriesId || null,
     invoiceNumber,
     invoiceDate,
     dueDate,
@@ -157,11 +166,13 @@ const create = async (data, companyId, userId) => {
     ccEmails:           data.ccEmails  || [],
     bccEmails:          data.bccEmails || [],
     emailMessage:       data.emailMessage,
+    globalUnitPrice:    globalUnitPrice,
     template:           data.template || 'default',
     reminderEnabled:    data.reminderEnabled !== false,
     isRecurring:        data.isRecurring || false,
     recurringSettings:  data.recurringSettings,
     additionalCharges:  data.additionalCharges || [],
+    project:            data.project,
     viewToken,
   };
 
@@ -224,7 +235,8 @@ const list = async (companyId, query = {}) => {
 // ─── Get Single Invoice ────────────────────────────────────────────────────
 const getById = async (invoiceId, companyId) => {
   const invoice = await Invoice.findOne({ _id: invoiceId, company: companyId })
-    .populate('client', 'clientName companyName email phone billingAddress gstNumber')
+    .populate('client',  'clientName companyName email phone billingAddress gstNumber')
+    .populate('series',  'prefix description isDefault')
     .lean();
   if (!invoice) throw Object.assign(new Error('Invoice not found'), { statusCode: 404 });
   return invoice;
@@ -249,7 +261,10 @@ const update = async (invoiceId, companyId, data) => {
     const gstType   = currency === 'INR'
       ? (data.gstType || invoice.gstType || 'intrastate')
       : 'none';
-    const lineItems = data.lineItems.map((item) => calculateLineItem(item, gstType, currency));
+    const globalUnitPrice = data.globalUnitPrice != null
+      ? parseFloat(data.globalUnitPrice)
+      : (invoice.globalUnitPrice != null ? invoice.globalUnitPrice : null);
+    const lineItems = data.lineItems.map((item) => calculateLineItem(item, gstType, currency, globalUnitPrice));
     const totals    = calculateInvoiceTotals(lineItems, data.invoiceDiscount || invoice.invoiceDiscount, {
       tdsRate:           data.tdsRate ?? invoice.tdsRate,
       shippingCharge:    data.shippingCharge ?? invoice.shippingCharge,
