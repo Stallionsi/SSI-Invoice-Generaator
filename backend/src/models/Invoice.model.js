@@ -133,7 +133,8 @@ const invoiceSchema = new mongoose.Schema(
     // Used only when paymentTerms === 'Custom'
     customPaymentDays: { type: Number, default: 0 },
     purchaseOrderNumber: { type: String, trim: true },
-    referenceNumber: { type: String, trim: true },
+    poDate:              { type: Date,   default: null },
+    referenceNumber:     { type: String, trim: true },
 
     // ── Status ─────────────────────────────────────────────────────────────
     status: {

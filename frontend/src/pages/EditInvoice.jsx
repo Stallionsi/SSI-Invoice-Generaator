@@ -36,7 +36,10 @@ const schema = z.object({
   client:              z.string().min(1, 'Client is required'),
   invoiceDate:         z.string().optional(),
   dueDate:             z.string().optional(),
+  paymentTerms:        z.string().optional(),
+  customPaymentDays:   z.number().optional(),
   purchaseOrderNumber: z.string().optional(),
+  poDate:              z.string().optional(),
   gstType:             z.enum(['none', 'intrastate', 'interstate']),
   currency:            z.string().default('INR'),
   notes:               z.string().optional(),
@@ -121,7 +124,8 @@ export default function EditInvoice() {
   const methods = useForm({
     resolver: zodResolver(schema),
     defaultValues: {
-      client: '', invoiceDate: '', dueDate: '', purchaseOrderNumber: '',
+      client: '', invoiceDate: '', dueDate: '', purchaseOrderNumber: '', poDate: '',
+      paymentTerms: 'Net 30', customPaymentDays: 0,
       gstType: 'intrastate', currency: 'INR', notes: '',
       globalUnitPrice: 0,
       lineItems: [{ description: '', quantity: 1, unitPrice: 0, taxRate: 18, fromDate: '', toDate: '', discount: { type: 'percentage', value: 0 } }],
@@ -136,20 +140,20 @@ export default function EditInvoice() {
     const hasProject = inv.project && (inv.project.name || inv.project.description || inv.project.started);
     if (hasProject) setShowProject(true);
 
-    // Derive globalUnitPrice: prefer stored field, fall back to first line item's unitPrice
-    const gup = inv.globalUnitPrice != null
-      ? inv.globalUnitPrice
-      : (inv.lineItems?.[0]?.unitPrice ?? 0);
-
     reset({
       client:              inv.client?._id || inv.client || '',
       invoiceDate:         inv.invoiceDate ? toDisplayDate(new Date(inv.invoiceDate)) : '',
       dueDate:             inv.dueDate     ? toDisplayDate(new Date(inv.dueDate))     : '',
       purchaseOrderNumber: inv.purchaseOrderNumber || '',
+      poDate:              inv.poDate ? new Date(inv.poDate).toISOString().slice(0, 10) : '',
       gstType:             inv.gstType || 'intrastate',
       currency:            inv.currency || 'INR',
       notes:               inv.notes || '',
-      globalUnitPrice:     gup,
+      paymentTerms:        inv.paymentTerms || 'Net 30',
+      customPaymentDays:   inv.customPaymentDays || 0,
+      // Reset to 0 so the LineItemEditor effect does NOT overwrite per-item prices.
+      // Each item loads with its own stored unitPrice below.
+      globalUnitPrice:     0,
       lineItems: inv.lineItems?.map((item) => ({
         description: item.description || '',
         quantity:    item.quantity    || 1,
@@ -179,7 +183,9 @@ export default function EditInvoice() {
   }, [inv, cfLoading, buildInitialValues]);
 
   // ── Auto due-date from client payment terms ───────────────────────────────
-  const [watchedClient, watchedInvoiceDate] = useWatch({ control, name: ['client', 'invoiceDate'] });
+  const [watchedClient, watchedInvoiceDate, watchedPaymentTerms] = useWatch({
+    control, name: ['client', 'invoiceDate', 'paymentTerms'],
+  });
   const formResetDone = useRef(false);
   useEffect(() => { if (inv) formResetDone.current = true; }, [inv]);
 
@@ -190,10 +196,12 @@ export default function EditInvoice() {
     staleTime: 60_000,
   });
 
+  // Auto-fill payment terms + due date when client changes
   useEffect(() => {
     if (!formResetDone.current) return;
     if (!watchedClient || !watchedInvoiceDate) return;
     const client = selectedClientData?.data?.data?.client;
+    if (!client) return;
     const paymentTerms = client?.paymentTerms || 'Net 30';
     const customDays   = client?.customPaymentDays ?? 30;
     const days = paymentTerms === 'Custom' ? customDays : (PAYMENT_TERMS_DAYS[paymentTerms] ?? 30);
@@ -203,12 +211,22 @@ export default function EditInvoice() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [watchedClient, watchedInvoiceDate, selectedClientData]);
 
+  // Recalculate dueDate when user manually changes payment terms dropdown
+  useEffect(() => {
+    if (!formResetDone.current || !watchedInvoiceDate) return;
+    const days = watchedPaymentTerms === 'Due on Receipt' ? 0
+      : (PAYMENT_TERMS_DAYS[watchedPaymentTerms] ?? 30);
+    setValue('dueDate', addDays(watchedInvoiceDate, days), { shouldDirty: false });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [watchedPaymentTerms]);
+
   // ── Live Totals ────────────────────────────────────────────────────────────
   const [lineItems, gstType, invoiceDiscount, currency, globalUnitPrice] = useWatch({
     control, name: ['lineItems', 'gstType', 'invoiceDiscount', 'currency', 'globalUnitPrice'],
   });
   const isINR  = currency === 'INR';
-  const totals = calcInvoiceTotals(lineItems, gstType, invoiceDiscount, currency, parseFloat(globalUnitPrice) || 0);
+  // Pass null so calcInvoiceTotals uses each item's own unitPrice (supports per-item prices)
+  const totals = calcInvoiceTotals(lineItems, gstType, invoiceDiscount, currency, null);
 
   // When currency → non-INR: force gstType 'none'
   useEffect(() => {
@@ -248,7 +266,7 @@ export default function EditInvoice() {
 
     const lineItemsClean = formData.lineItems.map((item) => ({
       ...item,
-      unitPrice: gup,
+      unitPrice: parseFloat(item.unitPrice) || gup,   // per-item price, fallback to global
       taxRate:   formData.currency !== 'INR' ? 0 : (item.taxRate || 0),
       discount:  { type: 'percentage', value: 0 },
       fromDate:  item.fromDate || null,
@@ -326,19 +344,32 @@ export default function EditInvoice() {
               <div>
                 <label className="label">
                   Due Date
-                  {watchedClient && selectedClientData?.data?.data?.client?.paymentTerms && (() => {
-                    const c = selectedClientData.data.data.client;
-                    const label = c.paymentTerms === 'Custom' ? `Custom (${c.customPaymentDays ?? 30} days)` : c.paymentTerms;
-                    return <span className="ml-2 text-xs font-normal text-slate-400">(auto: {label})</span>;
-                  })()}
+                  <span className="ml-2 text-xs font-normal text-slate-400">auto from terms · editable</span>
                 </label>
                 <input {...register('dueDate')} type="text" placeholder="DD-MM-YYYY" maxLength={10} className="input font-mono" />
-                <p className="text-xs text-slate-400 mt-1">Based on client payment terms — you can override this.</p>
+              </div>
+
+              {/* Payment Terms */}
+              <div>
+                <label className="label">Payment Terms</label>
+                <select {...register('paymentTerms')} className="input">
+                  <option value="Due on Receipt">Due on Receipt</option>
+                  <option value="Net 15">Net 15</option>
+                  <option value="Net 30">Net 30</option>
+                  <option value="Net 45">Net 45</option>
+                  <option value="Net 60">Net 60</option>
+                  <option value="Custom">Custom</option>
+                </select>
               </div>
 
               <div>
                 <label className="label">PO / Purchase Order Ref</label>
                 <input {...register('purchaseOrderNumber')} className="input" placeholder="PO-12345" />
+              </div>
+
+              <div>
+                <label className="label">PO Date</label>
+                <input {...register('poDate')} type="date" className="input" />
               </div>
 
               {/* Series badge — read-only on edit (number is already fixed) */}

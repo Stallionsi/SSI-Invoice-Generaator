@@ -44,6 +44,7 @@ const create = Joi.object({
   paymentTerms:        Joi.string().valid('Net 15', 'Net 30', 'Net 45', 'Net 60', 'Due on Receipt', 'Custom').default('Net 30'),
   customPaymentDays:   Joi.number().integer().min(0).default(0),
   purchaseOrderNumber: Joi.string().trim().allow('', null),
+  poDate:              Joi.date().allow(null, '').optional(),
   referenceNumber:     Joi.string().trim().allow('', null),
   currency:            Joi.string().length(3).uppercase().default('INR'),
   exchangeRate:        Joi.number().min(0).default(1),

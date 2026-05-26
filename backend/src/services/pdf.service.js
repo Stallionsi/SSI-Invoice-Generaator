@@ -259,6 +259,7 @@ const drawMetaStrip = (doc, invoice, y) => {
     { label: 'Dated',        value: fmtDate(invoice.invoiceDate) },
     { label: 'Due Date',     value: fmtDate(invoice.dueDate), overdue: isOverdue },
     invoice.purchaseOrderNumber ? { label: 'PO Number',  value: safe(invoice.purchaseOrderNumber) } : null,
+    invoice.poDate              ? { label: 'PO Date',    value: fmtDate(invoice.poDate) }             : null,
     termsValue                  ? { label: 'Net Terms',  value: termsValue }                        : null,
     { label: 'Amount Due', value: cur(invoice.currency, invoice.balanceDue ?? invoice.grandTotal), bold: true },
   ].filter(Boolean);

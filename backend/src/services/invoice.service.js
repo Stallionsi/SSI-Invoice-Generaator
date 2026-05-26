@@ -69,12 +69,15 @@ const create = async (data, companyId, userId) => {
   // to prevent CGST/SGST labels appearing on non-INR invoices.
   const gstType = invoiceCurrency === 'INR' ? (data.gstType || 'intrastate') : 'none';
 
-  // Resolve global unit price — if set, every line item uses this price
+  // Store globalUnitPrice as a reference value (used by PDF / display).
+  // Each item already has its own unitPrice set by the frontend (individual override
+  // or bulk-synced from global). We pass null here so calculateLineItem always
+  // uses item.unitPrice — never a blanket override that would wipe per-item prices.
   const globalUnitPrice = data.globalUnitPrice != null ? parseFloat(data.globalUnitPrice) : null;
 
   // Calculate line items (currency-aware: non-INR uses generic tax, not CGST/SGST)
   const lineItems = data.lineItems.map((item) =>
-    calculateLineItem(item, gstType, invoiceCurrency, globalUnitPrice)
+    calculateLineItem(item, gstType, invoiceCurrency, null)   // null = use item.unitPrice
   );
 
   // Calculate invoice totals
@@ -147,6 +150,7 @@ const create = async (data, companyId, userId) => {
     dueDate,
     paymentTerms:         data.paymentTerms || company.invoiceSettings?.defaultPaymentTerms,
     purchaseOrderNumber:  data.purchaseOrderNumber,
+    poDate:               data.poDate || null,
     referenceNumber:      data.referenceNumber,
     status:               'draft',
     currency:             invoiceCurrency,
@@ -261,10 +265,12 @@ const update = async (invoiceId, companyId, data) => {
     const gstType   = currency === 'INR'
       ? (data.gstType || invoice.gstType || 'intrastate')
       : 'none';
+    // Store the reference value but pass null to calculateLineItem so each
+    // item's own unitPrice is used (supports per-item price overrides).
     const globalUnitPrice = data.globalUnitPrice != null
       ? parseFloat(data.globalUnitPrice)
       : (invoice.globalUnitPrice != null ? invoice.globalUnitPrice : null);
-    const lineItems = data.lineItems.map((item) => calculateLineItem(item, gstType, currency, globalUnitPrice));
+    const lineItems = data.lineItems.map((item) => calculateLineItem(item, gstType, currency, null));
     const totals    = calculateInvoiceTotals(lineItems, data.invoiceDiscount || invoice.invoiceDiscount, {
       tdsRate:           data.tdsRate ?? invoice.tdsRate,
       shippingCharge:    data.shippingCharge ?? invoice.shippingCharge,

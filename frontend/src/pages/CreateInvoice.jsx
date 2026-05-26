@@ -41,6 +41,7 @@ const schema = z.object({
   paymentTerms:        z.string().optional(),
   customPaymentDays:   z.number().optional(),
   purchaseOrderNumber: z.string().optional(),
+  poDate:              z.string().optional(),
   gstType:             z.enum(['none', 'intrastate', 'interstate']),
   currency:            z.string().default('INR'),
   notes:               z.string().optional(),
@@ -98,6 +99,7 @@ const defaultValues = {
   paymentTerms:        'Net 30',
   customPaymentDays:   0,
   purchaseOrderNumber: '',
+  poDate:              '',
   gstType:             'intrastate',
   currency:            'INR',
   notes:               '',
@@ -137,8 +139,8 @@ export default function CreateInvoice() {
   const methods = useForm({ resolver: zodResolver(schema), defaultValues });
   const { register, handleSubmit, control, setValue, formState: { errors } } = methods;
 
-  const [watchedClient, watchedInvoiceDate, watchedSeriesId] = useWatch({
-    control, name: ['client', 'invoiceDate', 'seriesId'],
+  const [watchedClient, watchedInvoiceDate, watchedSeriesId, watchedPaymentTerms] = useWatch({
+    control, name: ['client', 'invoiceDate', 'seriesId', 'paymentTerms'],
   });
 
   const { data: nextNumberData } = useQuery({
@@ -160,9 +162,11 @@ export default function CreateInvoice() {
     staleTime: 60_000,
   });
 
+  // Auto-fill payment terms + due date when client or invoice date changes
   useEffect(() => {
     if (!watchedClient || !watchedInvoiceDate) return;
     const client = selectedClientData?.data?.data?.client;
+    if (!client) return;
     const paymentTerms = client?.paymentTerms || 'Net 30';
     const customDays   = client?.customPaymentDays ?? 30;
     const days = paymentTerms === 'Custom' ? customDays : (PAYMENT_TERMS_DAYS[paymentTerms] ?? 30);
@@ -172,12 +176,22 @@ export default function CreateInvoice() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [watchedClient, watchedInvoiceDate, selectedClientData]);
 
+  // Recalculate dueDate when user manually changes payment terms dropdown
+  useEffect(() => {
+    if (!watchedInvoiceDate || !watchedPaymentTerms) return;
+    const days = watchedPaymentTerms === 'Due on Receipt' ? 0
+      : (PAYMENT_TERMS_DAYS[watchedPaymentTerms] ?? 30);
+    setValue('dueDate', addDays(watchedInvoiceDate, days), { shouldDirty: false });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [watchedPaymentTerms]);
+
   // ── Live calculation ───────────────────────────────────────────────────────
   const [lineItems, gstType, invoiceDiscount, currency, globalUnitPrice] = useWatch({
     control, name: ['lineItems', 'gstType', 'invoiceDiscount', 'currency', 'globalUnitPrice'],
   });
   const isINR  = currency === 'INR';
-  const totals = calcInvoiceTotals(lineItems, gstType, invoiceDiscount, currency, parseFloat(globalUnitPrice) || 0);
+  // Pass null so calcInvoiceTotals uses each item's own unitPrice (supports per-item override)
+  const totals = calcInvoiceTotals(lineItems, gstType, invoiceDiscount, currency, null);
 
   // When currency → non-INR: force gstType 'none' and lock taxRates to 0
   useEffect(() => {
@@ -221,10 +235,11 @@ export default function CreateInvoice() {
     const gup = parseFloat(formData.globalUnitPrice) || 0;
     const proj = formData.project || {};
 
-    // Inject globalUnitPrice into every line item's unitPrice and zero tax for non-INR
+    // Use each item's own unitPrice (may differ from global if user overrode it).
+    // Zero out tax for non-INR invoices.
     const lineItemsClean = formData.lineItems.map((item) => ({
       ...item,
-      unitPrice: gup,
+      unitPrice: parseFloat(item.unitPrice) || gup,   // individual price, fallback to global
       taxRate:   formData.currency !== 'INR' ? 0 : (item.taxRate || 0),
       discount:  { type: 'percentage', value: 0 },
       fromDate:  item.fromDate || null,
@@ -359,23 +374,36 @@ export default function CreateInvoice() {
                 <input {...register('invoiceDate')} type="text" placeholder="DD-MM-YYYY" maxLength={10} className="input font-mono" />
               </div>
 
+              {/* Payment Terms */}
+              <div>
+                <label className="label">Payment Terms</label>
+                <select {...register('paymentTerms')} className="input">
+                  <option value="Due on Receipt">Due on Receipt</option>
+                  <option value="Net 15">Net 15</option>
+                  <option value="Net 30">Net 30</option>
+                  <option value="Net 45">Net 45</option>
+                  <option value="Net 60">Net 60</option>
+                  <option value="Custom">Custom</option>
+                </select>
+              </div>
+
               {/* Due date */}
               <div>
                 <label className="label">
                   Due Date
-                  {watchedClient && selectedClientData?.data?.data?.client?.paymentTerms && (() => {
-                    const c = selectedClientData.data.data.client;
-                    const label = c.paymentTerms === 'Custom' ? `Custom (${c.customPaymentDays ?? 30} days)` : c.paymentTerms;
-                    return <span className="ml-2 text-xs font-normal text-slate-400">(auto: {label})</span>;
-                  })()}
+                  <span className="ml-2 text-xs font-normal text-slate-400">auto from terms · editable</span>
                 </label>
                 <input {...register('dueDate')} type="text" placeholder="DD-MM-YYYY" maxLength={10} className="input font-mono" />
-                <p className="text-xs text-slate-400 mt-1">Based on client payment terms — you can override this.</p>
               </div>
 
               <div>
                 <label className="label">PO / Purchase Order Ref</label>
                 <input {...register('purchaseOrderNumber')} className="input" placeholder="PO-12345" />
+              </div>
+
+              <div>
+                <label className="label">PO Date</label>
+                <input {...register('poDate')} type="date" className="input" />
               </div>
 
               {/* GST type — only for INR */}

@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 import { useFieldArray, useWatch, useFormContext } from 'react-hook-form';
-import { Plus, Trash2, DollarSign } from 'lucide-react';
+import { Plus, Trash2, DollarSign, RotateCcw } from 'lucide-react';
 import { calcLineItem, fmtCurrency, fmtDateRange } from '../../utils/calculations';
 import DateRangePicker from './DateRangePicker';
 
@@ -8,21 +8,16 @@ import DateRangePicker from './DateRangePicker';
 const makeDefaultItem = (globalUnitPrice = 0, isINR = true) => ({
   description: '',
   quantity:    1,
-  unitPrice:   globalUnitPrice,   // mirrored from global
+  unitPrice:   globalUnitPrice,
   taxRate:     isINR ? 18 : 0,
   fromDate:    '',
   toDate:      '',
-  discount:    { type: 'percentage', value: 0 }, // kept for backward compat
+  discount:    { type: 'percentage', value: 0 },
 });
 
 // ─── Row-level date cleaner ────────────────────────────────────────────────
-// Strips any previously auto-inserted date range from the description so old
-// invoices that stored "DESC, 04/13/2026 To 04/19/2026" are cleaned up.
-// Dates are intentionally NOT re-appended — the 📅 chip below the description
-// field is the only place they appear in the UI.
 function useAutoDescription(index) {
   const { setValue, getValues } = useFormContext();
-
   const fromDate = useWatch({ name: `lineItems.${index}.fromDate` });
   const toDate   = useWatch({ name: `lineItems.${index}.toDate` });
 
@@ -38,15 +33,20 @@ function useAutoDescription(index) {
 }
 
 // ─── Single Row ────────────────────────────────────────────────────────────
-function LineItemRow({ index, field, remove, isLast, currency, isINR, globalUnitPrice, errors, register, setValue }) {
+function LineItemRow({ index, remove, isLast, currency, isINR, globalUnitPrice, errors, register, setValue }) {
   useAutoDescription(index);
 
   const vals = useWatch({ name: `lineItems.${index}` }) || {};
   const fromDate = vals.fromDate || '';
   const toDate   = vals.toDate   || '';
 
+  const itemPrice = parseFloat(vals.unitPrice) || 0;
+  const gupNum    = parseFloat(globalUnitPrice) || 0;
+  // Item differs from global when global is set and prices don't match
+  const isOverridden = gupNum > 0 && Math.abs(itemPrice - gupNum) > 0.001;
+
+  // Calculate line total using item's own unitPrice (no global override)
   const { lineTotal } = calcLineItem(vals, {
-    globalUnitPrice: parseFloat(globalUnitPrice) || 0,
     currency,
     gstType: isINR ? 'intrastate' : 'none',
   });
@@ -70,7 +70,6 @@ function LineItemRow({ index, field, remove, isLast, currency, isINR, globalUnit
           {errors?.lineItems?.[index]?.description && (
             <p className="text-red-500 text-xs mt-0.5">Required</p>
           )}
-          {/* Date range display chip (read-only preview when dates set) */}
           {(fromDate || toDate) && (
             <p className="mt-1 text-xs text-indigo-500 font-medium">
               📅 {fmtDateRange(fromDate, toDate, currency)}
@@ -90,8 +89,9 @@ function LineItemRow({ index, field, remove, isLast, currency, isINR, globalUnit
         </button>
       </div>
 
-      {/* Second row: Qty + Tax + Date range + Total */}
-      <div className="mt-3 grid grid-cols-2 sm:grid-cols-4 gap-3 items-end">
+      {/* Second row: Qty | Unit Price | Tax | Period | Total */}
+      <div className="mt-3 grid grid-cols-2 sm:grid-cols-5 gap-3 items-end">
+
         {/* Quantity */}
         <div>
           <label className="text-xs text-gray-400 font-medium mb-1 block">Qty</label>
@@ -104,7 +104,40 @@ function LineItemRow({ index, field, remove, isLast, currency, isINR, globalUnit
           />
         </div>
 
-        {/* Tax % — hidden for USD */}
+        {/* Unit Price — individual, overrides global for this item */}
+        <div>
+          <div className="flex items-center justify-between mb-1">
+            <label className="text-xs text-gray-400 font-medium">Unit Price</label>
+            {isOverridden && (
+              <button
+                type="button"
+                title="Reset to global price"
+                onClick={() => setValue(`lineItems.${index}.unitPrice`, gupNum, { shouldDirty: true })}
+                className="flex items-center gap-0.5 text-[10px] font-semibold text-amber-600 hover:text-amber-700 transition-colors"
+              >
+                <RotateCcw className="w-2.5 h-2.5" />
+                <span>global</span>
+              </button>
+            )}
+          </div>
+          <input
+            {...register(`lineItems.${index}.unitPrice`, { valueAsNumber: true })}
+            type="number"
+            min="0"
+            step="0.01"
+            className={`input text-sm text-right font-mono transition-colors ${
+              isOverridden
+                ? 'border-amber-300 bg-amber-50/40 focus:ring-amber-300'
+                : 'bg-white'
+            }`}
+            placeholder="0.00"
+          />
+          {isOverridden && (
+            <p className="text-[10px] text-amber-500 mt-0.5 text-right">custom price</p>
+          )}
+        </div>
+
+        {/* Tax % */}
         {isINR ? (
           <div>
             <label className="text-xs text-gray-400 font-medium mb-1 block">Tax %</label>
@@ -126,8 +159,8 @@ function LineItemRow({ index, field, remove, isLast, currency, isINR, globalUnit
           </div>
         )}
 
-        {/* Date range picker */}
-        <div className="sm:col-span-1">
+        {/* Service Period */}
+        <div>
           <label className="text-xs text-gray-400 font-medium mb-1 block">Service Period</label>
           <DateRangePicker
             fromDate={fromDate}
@@ -163,19 +196,17 @@ export default function LineItemEditor({
   const globalUnitPrice = useWatch({ control, name: 'globalUnitPrice' });
   const gupNum = parseFloat(globalUnitPrice) || 0;
 
-  // Sync globalUnitPrice → every line item's unitPrice (keeps backend totals accurate)
+  // When globalUnitPrice changes → bulk-update ALL items.
+  // Only fires when gupNum > 0 so that loading an existing invoice with
+  // globalUnitPrice = 0 does NOT wipe the per-item prices already in the form.
   useEffect(() => {
-    if (gupNum >= 0) {
+    if (gupNum > 0) {
       fields.forEach((_, i) => {
         setValue(`lineItems.${i}.unitPrice`, gupNum, { shouldDirty: false });
-        // When currency is not INR, force taxRate = 0
-        if (!isINR) {
-          setValue(`lineItems.${i}.taxRate`, 0, { shouldDirty: false });
-        }
       });
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [gupNum, isINR, fields.length]);
+  }, [gupNum, fields.length]);
 
   // When currency flips to non-INR, zero out all taxRates
   useEffect(() => {
@@ -199,13 +230,11 @@ export default function LineItemEditor({
           <label className="text-xs font-semibold text-indigo-700 block mb-0.5">
             Global Unit Price
             <span className="ml-2 font-normal text-indigo-500">
-              — applied to all line items
+              — sets all items at once · override per-item below
             </span>
           </label>
           <div className="flex items-center gap-2">
-            <span className="text-sm font-bold text-indigo-800">
-              {currency}
-            </span>
+            <span className="text-sm font-bold text-indigo-800">{currency}</span>
             <input
               {...register('globalUnitPrice', { valueAsNumber: true })}
               type="number"
@@ -219,9 +248,7 @@ export default function LineItemEditor({
         {gupNum > 0 && (
           <div className="text-right shrink-0">
             <p className="text-xs text-indigo-500 font-medium">Per unit</p>
-            <p className="text-base font-bold text-indigo-700">
-              {fmtCurrency(gupNum, currency)}
-            </p>
+            <p className="text-base font-bold text-indigo-700">{fmtCurrency(gupNum, currency)}</p>
           </div>
         )}
       </div>
@@ -234,13 +261,21 @@ export default function LineItemEditor({
         </div>
       )}
 
+      {/* ── Column header hint ─────────────────────────────────────────── */}
+      <div className="hidden sm:grid grid-cols-5 gap-3 px-4 text-[10px] font-semibold uppercase tracking-wider text-gray-400 pl-8">
+        <span>Description</span>
+        <span className="text-right">Qty</span>
+        <span className="text-right">Unit Price</span>
+        <span className="text-right">Tax %</span>
+        <span className="text-right">Amount</span>
+      </div>
+
       {/* ── Line Items ────────────────────────────────────────────────── */}
       <div className="space-y-3 pl-4">
         {fields.map((field, i) => (
           <LineItemRow
             key={field.id}
             index={i}
-            field={field}
             remove={remove}
             isLast={fields.length === 1}
             currency={currency}
