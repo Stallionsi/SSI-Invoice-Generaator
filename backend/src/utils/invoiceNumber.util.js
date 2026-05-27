@@ -75,15 +75,21 @@ const escapeRegex = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 //
 const ensureSequenceSeeded = async (companyId, clientId, seriesId, fiscalYear, prefix) => {
   const normalizedSeriesId = seriesId || null;
-
-  // Fast path — document already exists, nothing to do.
-  const exists = await InvoiceSequence.exists({
+  const key = {
     company:    companyId,
     client:     clientId ?? null,
     series:     normalizedSeriesId,
     fiscalYear,
-  });
-  if (exists) return;
+  };
+
+  // Fast path — document already exists AND counter is ahead of zero.
+  // A counter of 0 can happen when:
+  //   • The series was previewed before any invoice existed (seeded at 0), AND
+  //   • The first invoice was then created with a manual number override
+  //     (manual overrides skip the sequence increment), leaving current=0.
+  // In that case we must fall through and re-seed from actual invoices.
+  const existing = await InvoiceSequence.findOne(key).select('current').lean();
+  if (existing && existing.current > 0) return;
 
   const Invoice = require('../models/Invoice.model');
 
@@ -136,13 +142,16 @@ const ensureSequenceSeeded = async (companyId, clientId, seriesId, fiscalYear, p
   const seedValue = Math.max(extractNum(lastFyInv), extractNum(lastAnyInv));
 
   try {
-    await InvoiceSequence.create({
-      company:    companyId,
-      client:     clientId ?? null,
-      series:     normalizedSeriesId,
-      fiscalYear,
-      current:    seedValue,
-    });
+    // Use $max so that:
+    //  • If no document exists → upsert creates it with current = seedValue
+    //  • If document exists at current=0 (stale) → advances to seedValue
+    //  • If document exists at current > seedValue (concurrent writes) → no-op
+    // This is atomic and race-safe.
+    await InvoiceSequence.findOneAndUpdate(
+      key,
+      { $max: { current: seedValue } },
+      { upsert: true },
+    );
   } catch (e) {
     if (e.code !== 11000) throw e; // 11000 = duplicate key → race was won by peer, OK
   }

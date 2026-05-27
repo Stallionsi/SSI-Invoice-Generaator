@@ -30,7 +30,10 @@
       "Bash(node --check backend/src/validations/invoice.validation.js)",
       "Bash(node --check backend/src/models/Invoice.model.js)",
       "Bash(node --check \"c:\\\\Users\\\\saura\\\\OneDrive\\\\Desktop\\\\SSI-PROJECTS\\\\Invoice Generator\\\\backend\\\\src\\\\utils\\\\invoiceNumber.util.js\")",
-      "Bash(node --check \"c:\\\\Users\\\\saura\\\\OneDrive\\\\Desktop\\\\SSI-PROJECTS\\\\Invoice Generator\\\\backend\\\\src\\\\services\\\\invoiceSeries.service.js\")"
+      "Bash(node --check \"c:\\\\Users\\\\saura\\\\OneDrive\\\\Desktop\\\\SSI-PROJECTS\\\\Invoice Generator\\\\backend\\\\src\\\\services\\\\invoiceSeries.service.js\")",
+      "Bash(Get-Process node *)",
+      "Bash(Select-Object Id, CPU, StartTime)",
+      "PowerShell(Get-Process node -ErrorAction SilentlyContinue)"
     ]
   }
 }
