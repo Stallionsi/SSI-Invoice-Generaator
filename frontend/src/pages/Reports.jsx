@@ -238,7 +238,6 @@ function downloadInvoicesXlsx(invoices) {
       'Invoice Date': fmtDateStr(inv.invoiceDate),
       'Due Date':     fmtDateStr(inv.dueDate),
       'Client Name':  inv.client?.clientName || inv.recipientName || '',
-      'Status':       (inv.status || '').charAt(0).toUpperCase() + (inv.status || '').slice(1),
       'Subtotal':     n(inv.subtotal),
       'Discount':     n(inv.discountTotal ?? inv.discount),
       'Tax':          n(inv.taxTotal    ?? inv.tax),
@@ -257,7 +256,6 @@ function downloadInvoicesXlsx(invoices) {
     { wch: 14 }, // Invoice Date
     { wch: 14 }, // Due Date
     { wch: 28 }, // Client Name
-    { wch: 12 }, // Status
     { wch: 12 }, // Subtotal
     { wch: 12 }, // Discount
     { wch: 12 }, // Tax

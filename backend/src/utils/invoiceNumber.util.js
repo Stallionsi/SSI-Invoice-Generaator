@@ -82,52 +82,43 @@ const ensureSequenceSeeded = async (companyId, clientId, seriesId, fiscalYear, p
     fiscalYear,
   };
 
-  // Fast path — document already exists AND counter is ahead of zero.
-  // A counter of 0 can happen when:
-  //   • The series was previewed before any invoice existed (seeded at 0), AND
-  //   • The first invoice was then created with a manual number override
-  //     (manual overrides skip the sequence increment), leaving current=0.
-  // In that case we must fall through and re-seed from actual invoices.
-  const existing = await InvoiceSequence.findOne(key).select('current').lean();
-  if (existing && existing.current > 0) return;
-
   const Invoice = require('../models/Invoice.model');
 
   // ── Two-pass seed strategy ────────────────────────────────────────────────
   //
-  // Pass 1 (preferred): look for invoices in the SAME fiscal year that use
-  // the exact "{prefix}-{fiscalYear}-" format (new invoices).
+  // Pass 1 (preferred): highest-numbered invoice in the current fiscal year.
+  // Pass 2 (fallback):  highest-numbered invoice for this client+prefix ever
+  //                     (catches manually-numbered invoices from any period).
   //
-  // Pass 2 (fallback): look for ANY invoice for this client with this prefix,
-  // regardless of date or format — handles old invoices that were numbered
-  // manually or with a different format (e.g. "SSI/COM-2026-002001").
-  // We take the MAX trailing numeric part across all matching invoices.
+  // Sort by invoiceNumber descending — for zero-padded numbers lexicographic
+  // order equals numeric order, so this reliably returns the highest number
+  // regardless of creation date.
   //
-  // The higher of the two passes is used as the seed so the new sequence
-  // never issues a number that already exists in the DB.
+  // No fast-path exit: we always scan and use $max upsert so that invoices
+  // created via manual number override (which skip the $inc) are accounted for
+  // and the counter is kept in sync on every call.
   //
   const startYear = parseInt(fiscalYear.split('-')[0], 10);
   const fyFrom    = new Date(startYear,     3,  1,  0,  0,  0);
   const fyTo      = new Date(startYear + 1, 2, 31, 23, 59, 59);
 
-  // Prefix-only pattern (catches ALL old and new formats for this series)
   const prefixOnlyPattern = new RegExp(`^${escapeRegex(prefix)}-`, 'i');
 
   const baseQuery = { company: companyId, invoiceNumber: { $regex: prefixOnlyPattern } };
   if (clientId) baseQuery.client = clientId;
 
-  // Pass 1 — same fiscal year, exact format
+  // Pass 1 — current fiscal year, exact format
   const fyPattern = new RegExp(`^${escapeRegex(prefix)}-${escapeRegex(fiscalYear)}-`);
   const lastFyInv = await Invoice
     .findOne({ ...baseQuery, invoiceDate: { $gte: fyFrom, $lte: fyTo }, invoiceNumber: { $regex: fyPattern } })
-    .sort({ invoiceDate: -1, createdAt: -1 })
+    .sort({ invoiceNumber: -1 })
     .select('invoiceNumber')
     .lean();
 
   // Pass 2 — any matching invoice for this client (all-time, any format)
   const lastAnyInv = await Invoice
     .findOne(baseQuery)
-    .sort({ createdAt: -1 })
+    .sort({ invoiceNumber: -1 })
     .select('invoiceNumber')
     .lean();
 
@@ -138,22 +129,20 @@ const ensureSequenceSeeded = async (companyId, clientId, seriesId, fiscalYear, p
     return isNaN(num) ? 0 : num;
   };
 
-  // Use the higher of the two so we never re-issue an existing number
   const seedValue = Math.max(extractNum(lastFyInv), extractNum(lastAnyInv));
 
   try {
-    // Use $max so that:
-    //  • If no document exists → upsert creates it with current = seedValue
-    //  • If document exists at current=0 (stale) → advances to seedValue
-    //  • If document exists at current > seedValue (concurrent writes) → no-op
-    // This is atomic and race-safe.
+    // $max upsert:
+    //  • No document exists      → creates at seedValue
+    //  • document.current < seedValue → advances to seedValue  (fixes stale counter)
+    //  • document.current ≥ seedValue → no-op                  (concurrent writes safe)
     await InvoiceSequence.findOneAndUpdate(
       key,
       { $max: { current: seedValue } },
       { upsert: true },
     );
   } catch (e) {
-    if (e.code !== 11000) throw e; // 11000 = duplicate key → race was won by peer, OK
+    if (e.code !== 11000) throw e; // duplicate key race → peer already upserted, OK
   }
 };
 
