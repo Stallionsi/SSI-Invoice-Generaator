@@ -77,11 +77,11 @@ export default function Dashboard() {
     return sorted[0]?.[0] || 'INR';
   }, [allInvoices]);
 
-  // ── Revenue grouped by currency (paid only) ────────────────────────────────
+  // ── Revenue grouped by currency (all sent invoices — sent/overdue/partial/paid) ───
   const revenuesByCurrency = useMemo(() => {
     const map = {};
     allInvoices
-      .filter((inv) => inv.status?.toLowerCase() === 'paid')
+      .filter((inv) => !['draft', 'cancelled'].includes(inv.status?.toLowerCase()))
       .forEach((inv) => {
         const cur = inv.currency || 'INR';
         map[cur] = (map[cur] || 0) + n(inv.grandTotal);
@@ -122,10 +122,10 @@ export default function Dashboard() {
   const [chartCurrency, setChartCurrency] = useState(null);
   const activeCurrency = chartCurrency ?? paidCurrencies[0] ?? dominantCurrency;
 
-  // ── Chart: paid invoices for the selected currency, grouped by month ────────
+  // ── Chart: sent invoices for the selected currency, grouped by month ─────────
   const chartData = useMemo(() => {
     const paid = allInvoices.filter(
-      (inv) => inv.status?.toLowerCase() === 'paid' &&
+      (inv) => !['draft', 'cancelled'].includes(inv.status?.toLowerCase()) &&
                (inv.currency || 'INR') === activeCurrency,
     );
     const map = {};
@@ -177,7 +177,7 @@ export default function Dashboard() {
           <StatsCard
             title="Total Revenue"
             value={revenueDisplay}
-            subtitle={revenuesByCurrency.length === 1 ? `${revenuesByCurrency[0].currency} · paid invoices` : undefined}
+            subtitle={revenuesByCurrency.length === 1 ? `${revenuesByCurrency[0].currency} · sent invoices` : undefined}
             icon={TrendingUp}
             color="green"
             onClick={() => navigate('/reports')}
@@ -187,7 +187,7 @@ export default function Dashboard() {
           revenuesByCurrency.map((r, i) => (
             <StatsCard
               key={r.currency}
-              title={i === 0 ? 'Revenue (paid)' : `Revenue · ${r.currency}`}
+              title={i === 0 ? 'Revenue (sent)' : `Revenue · ${r.currency}`}
               value={fmtCurrency(r.total, r.currency)}
               subtitle={r.currency}
               icon={TrendingUp}
@@ -216,7 +216,7 @@ export default function Dashboard() {
           value={invLoading ? '—' : overdueCount}
           icon={AlertCircle}
           color="red"
-          onClick={() => navigate('/invoices?status=overdue')}
+          onClick={() => navigate('/invoices?overdue=true')}
         />
       </div>
 
@@ -270,7 +270,7 @@ export default function Dashboard() {
               <TrendingUp className="w-10 h-10 mb-3" style={{ color: '#E0E7FF' }} />
               <p className="text-sm text-gray-400 font-medium">No {activeCurrency} revenue yet</p>
               <p className="text-xs text-gray-300 mt-1">
-                Mark invoices as <strong>Paid</strong> to see revenue here
+                Mark invoices as <strong>Sent</strong> to see revenue here
               </p>
             </div>
           ) : (

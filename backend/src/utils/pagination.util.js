@@ -5,7 +5,7 @@
 
 const DEFAULT_PAGE  = 1;
 const DEFAULT_LIMIT = 20;
-const MAX_LIMIT     = 100;
+const MAX_LIMIT     = 9999;
 
 /**
  * Parse pagination params from query string.

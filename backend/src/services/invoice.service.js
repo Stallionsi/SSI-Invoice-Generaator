@@ -497,6 +497,25 @@ const markAsSent = async (invoiceId, companyId) => {
   return invoice;
 };
 
+// Reverses markAsSent: sent/overdue → draft, clears isSent flag.
+// Not allowed for paid/partial/cancelled (payments already recorded).
+const markAsUnsent = async (invoiceId, companyId) => {
+  const invoice = await Invoice.findOneAndUpdate(
+    { _id: invoiceId, company: companyId, status: { $in: ['sent', 'overdue'] } },
+    { status: 'draft', isSent: false },
+    { new: true }
+  );
+  if (!invoice) {
+    const existing = await Invoice.findOne({ _id: invoiceId, company: companyId }).lean();
+    if (!existing) throw Object.assign(new Error('Invoice not found'), { statusCode: 404 });
+    // Already draft / paid / cancelled — return as-is (idempotent)
+    return existing;
+  }
+  // Cancel scheduled reminders since it's back to draft
+  await cancelAllReminders(invoiceId.toString());
+  return invoice;
+};
+
 // ─── Duplicate Invoice ────────────────────────────────────────────────────
 const duplicate = async (invoiceId, companyId, userId) => {
   const source = await Invoice.findOne({ _id: invoiceId, company: companyId }).lean();
@@ -554,4 +573,4 @@ const markViewed = async (viewToken) => {
   );
 };
 
-module.exports = { create, list, getById, update, cancel, sendInvoiceEmail, markAsSent, duplicate, createCreditNote, markViewed, schedulePaymentReminders };
+module.exports = { create, list, getById, update, cancel, sendInvoiceEmail, markAsSent, markAsUnsent, duplicate, createCreditNote, markViewed, schedulePaymentReminders };

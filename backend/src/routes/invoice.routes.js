@@ -24,7 +24,8 @@ router.delete('/:id', authorize('admin'),                                  ctrl.
 
 // Actions
 router.post('/:id/send',        authorize('admin', 'finance'), validate(v.sendEmail),     ctrl.send);
-router.post('/:id/mark-sent',   authorize('admin', 'finance'),                            ctrl.markAsSent);
+router.post('/:id/mark-sent',   authorize('admin', 'finance'), ctrl.markAsSent);
+router.post('/:id/mark-unsent', authorize('admin', 'finance'), ctrl.markAsUnsent);
 router.post('/:id/duplicate',   authorize('admin', 'finance'),                            ctrl.duplicate);
 router.post('/:id/credit-note', authorize('admin', 'finance'),                            ctrl.createCreditNote);
 

@@ -4,10 +4,10 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
 import {
   ArrowLeft, Send, CreditCard, Download, Trash2, Pencil,
-  FileText, Calendar, User, Building2,
+  FileText, Calendar, User, Building2, CheckCheck, RotateCcw,
 } from 'lucide-react';
 
-import { getInvoice, deleteInvoice } from '../api/invoices.api';
+import { getInvoice, deleteInvoice, markInvoiceSent, markInvoiceUnsent } from '../api/invoices.api';
 import { useAuthStore } from '../store/authStore';
 
 import StatusBadge from '../components/ui/StatusBadge';
@@ -51,6 +51,26 @@ export default function InvoiceDetails() {
       navigate('/invoices');
     },
     onError: (e) => toast.error(e.response?.data?.message || 'Delete failed'),
+  });
+
+  const { mutate: doMarkSent, isPending: markingSent } = useMutation({
+    mutationFn: () => markInvoiceSent(id),
+    onSuccess: () => {
+      toast.success('Marked as sent');
+      qc.invalidateQueries({ queryKey: ['invoice', id] });
+      qc.invalidateQueries({ queryKey: ['invoices'] });
+    },
+    onError: (e) => toast.error(e.response?.data?.message || 'Failed'),
+  });
+
+  const { mutate: doMarkUnsent, isPending: markingUnsent } = useMutation({
+    mutationFn: () => markInvoiceUnsent(id),
+    onSuccess: () => {
+      toast.success('Reverted to draft');
+      qc.invalidateQueries({ queryKey: ['invoice', id] });
+      qc.invalidateQueries({ queryKey: ['invoices'] });
+    },
+    onError: (e) => toast.error(e.response?.data?.message || 'Failed'),
   });
 
 
@@ -108,6 +128,32 @@ export default function InvoiceDetails() {
                 >
                   <Send className="w-3.5 h-3.5" />
                   <span className="hidden sm:inline">Send</span>
+                </button>
+              )}
+
+              {/* Mark Sent toggle — only for draft/sent/overdue */}
+              {inv.status === 'draft' && (
+                <button
+                  className="flex items-center gap-1.5 h-8 px-3 rounded-xl text-xs font-semibold transition-all disabled:opacity-40"
+                  style={{ background: 'rgba(34,197,94,0.25)', border: '1px solid rgba(34,197,94,0.5)', color: '#86efac' }}
+                  onClick={() => doMarkSent()}
+                  disabled={markingSent}
+                  title="Mark as Sent"
+                >
+                  <CheckCheck className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline">Mark Sent</span>
+                </button>
+              )}
+              {['sent', 'overdue'].includes(inv.status) && (
+                <button
+                  className="flex items-center gap-1.5 h-8 px-3 rounded-xl text-xs font-semibold transition-all disabled:opacity-40"
+                  style={{ background: 'rgba(251,191,36,0.25)', border: '1px solid rgba(251,191,36,0.5)', color: '#fde68a' }}
+                  onClick={() => doMarkUnsent()}
+                  disabled={markingUnsent}
+                  title="Revert to Draft"
+                >
+                  <RotateCcw className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline">Mark Unsent</span>
                 </button>
               )}
 

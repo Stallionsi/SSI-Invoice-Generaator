@@ -5,8 +5,7 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   PieChart, Pie, Cell, Legend,
 } from 'recharts';
-import { Download, TrendingUp, Clock, Users, DollarSign, FileText, ChevronDown, Pencil } from 'lucide-react';
-import * as XLSX from 'xlsx';
+import { TrendingUp, Clock, Users, DollarSign, FileText, ChevronDown, Pencil } from 'lucide-react';
 import { getInvoices } from '../api/invoices.api';
 import { getClientReport } from '../api/reports.api';
 import { getClients } from '../api/clients.api';
@@ -212,73 +211,6 @@ function buildAgingBuckets(invoices) {
     { name: '61–90 days', value: buckets.b61_90  },
     { name: '90+ days',   value: buckets.b90plus  },
   ].filter((b) => b.value > 0);
-}
-
-// ── XLSX export (SheetJS — proper column widths, no "########") ─────────────
-
-/** Format a date as YYYY-MM-DD string; empty string if invalid */
-function fmtDateStr(d) {
-  const dt = parseDate(d);
-  if (!dt) return '';
-  const y   = dt.getFullYear();
-  const m   = String(dt.getMonth() + 1).padStart(2, '0');
-  const day = String(dt.getDate()).padStart(2, '0');
-  return `${y}-${m}-${day}`;
-}
-
-function downloadInvoicesXlsx(invoices) {
-  // Build plain JS objects — SheetJS maps keys → header row automatically
-  const data = invoices.map((inv) => {
-    const grandTotal = n(inv.grandTotal);
-    const amountPaid = n(inv.amountPaid);
-    const balanceDue = n(inv.balanceDue ?? (grandTotal - amountPaid));
-
-    return {
-      'Invoice No':   inv.invoiceNumber  || '',
-      'Invoice Date': fmtDateStr(inv.invoiceDate),
-      'Due Date':     fmtDateStr(inv.dueDate),
-      'Client Name':  inv.client?.clientName || inv.recipientName || '',
-      'Subtotal':     n(inv.subtotal),
-      'Discount':     n(inv.discountTotal ?? inv.discount),
-      'Tax':          n(inv.taxTotal    ?? inv.tax),
-      'Grand Total':  grandTotal,
-      'Amount Paid':  amountPaid,
-      'Balance Due':  balanceDue,
-      'Currency':     inv.currency || 'INR',
-    };
-  });
-
-  const ws = XLSX.utils.json_to_sheet(data);
-
-  // Set explicit column widths (wch = width in characters)
-  ws['!cols'] = [
-    { wch: 18 }, // Invoice No
-    { wch: 14 }, // Invoice Date
-    { wch: 14 }, // Due Date
-    { wch: 28 }, // Client Name
-    { wch: 12 }, // Subtotal
-    { wch: 12 }, // Discount
-    { wch: 12 }, // Tax
-    { wch: 14 }, // Grand Total
-    { wch: 14 }, // Amount Paid
-    { wch: 14 }, // Balance Due
-    { wch: 10 }, // Currency
-  ];
-
-  // Style the header row: bold
-  const range  = XLSX.utils.decode_range(ws['!ref']);
-  const colCount = range.e.c + 1;
-  for (let c = 0; c < colCount; c++) {
-    const cellRef = XLSX.utils.encode_cell({ r: 0, c });
-    if (!ws[cellRef]) continue;
-    ws[cellRef].s = { font: { bold: true } };
-  }
-
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, 'Invoices');
-
-  // Triggers a browser download of the .xlsx file
-  XLSX.writeFile(wb, `invoices-${new Date().toISOString().slice(0, 10)}.xlsx`);
 }
 
 // ── Sub-components ──────────────────────────────────────────────────────────
@@ -504,17 +436,6 @@ export default function Reports() {
     ? `Q${selectedQuarter} ${selectedYear}`
     : String(selectedYear);
 
-  // ── Excel export — honours period filter ─────────────────────────────────
-  const handleExport = () => {
-    if (!periodFilteredInvoices.length) { toast.error('No invoices to export'); return; }
-    try {
-      downloadInvoicesXlsx(periodFilteredInvoices);
-      toast.success('Excel file downloaded');
-    } catch {
-      toast.error('Export failed');
-    }
-  };
-
   const isLoading = invLoading;
   const isFiltered = selectedClient !== 'all';
   const selectedClientName = isFiltered
@@ -537,10 +458,6 @@ export default function Reports() {
                 ...clientDropdown.map((c) => ({ value: c._id, label: c.clientName })),
               ]}
             />
-            <button className="btn btn-secondary" onClick={handleExport} disabled={isLoading}>
-              <Download className="w-4 h-4" />
-              <span className="hidden sm:inline">Export Excel</span>
-            </button>
           </div>
         }
       />
